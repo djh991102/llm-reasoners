@@ -3,6 +3,7 @@ import warnings
 import copy
 
 from transformers import AutoModelForCausalLM, AutoTokenizer, GenerationConfig, BitsAndBytesConfig, AutoConfig, AutoModelForCausalLM
+from transformers import StoppingCriteria
 import torch
 from peft import PeftModel
 import numpy as np
@@ -11,6 +12,12 @@ from accelerate import infer_auto_device_map, dispatch_model
 
 from .. import LanguageModel,GenerateOutput
 
+class EosListStoppingCriteria(StoppingCriteria):
+    def __init__(self, eos_sequence = [835, 2799, 4080, 29901]):
+        self.eos_sequence = eos_sequence
+    def __call__(self, input_ids: torch.LongTensor, scores: torch.FloatTensor, **kwargs) -> bool:
+        last_ids = input_ids[:,-len(self.eos_sequence):].tolist()
+        return self.eos_sequence in last_ids
 
 class HFModel(LanguageModel):
     def __init__(self, model_pth, tokenizer_pth, device='cuda:0', max_batch_size=1, max_new_tokens=None, max_length=2048, quantized=None, peft_pth=None, load_awq_pth=None,device_map=None, **kwargs):
@@ -188,6 +195,7 @@ class HFModel(LanguageModel):
                     generation_config=generation_config,
                     output_scores=output_log_probs,
                     return_dict_in_generate=True,
+                    stopping_criteria = [EosListStoppingCriteria(eos_sequence=eos_token_id)],
                 )
             decoded = self.tokenizer.batch_decode(generation_output.sequences, skip_special_tokens=True)
             if hide_input:

@@ -1,3 +1,10 @@
+import os
+import sys
+import json
+import warnings
+import fire
+import random
+
 from typing import Type, Callable, Optional, Literal
 
 import numpy as np
@@ -11,6 +18,15 @@ from world_model import GSM8kWorldModel, GSM8kPromptDict
 from search_config import GSM8kConfig, GSM8kUsefulPrompt
 import utils
 
+llama_ckpts = os.environ.get("LLAMA_CKPTS", None)
+llama_2_ckpts = os.environ.get("LLAMA2_CKPTS", None)
+llama_3_ckpts = os.environ.get("LLAMA3_CKPTS", None)
+
+local_rank = int(os.environ.get("LOCAL_RANK", 0))
+if local_rank != 0:
+    sys.stdout = open(os.devnull, 'w')
+    warnings.filterwarnings('ignore')
+
 
 def node_visualizer(x: MCTSNode):
     if not x.state:
@@ -22,9 +38,9 @@ def rap_gsm8k(base_model: LanguageModel,
               useful_prompt: GSM8kUsefulPrompt,
               search_algo: Type[SearchAlgorithm] = MCTS,
               resume: int = 0,
-              n_action: int = 4,
+              n_action: int = 3,
               n_confidence: int = 8,
-              depth_limit: int = 5,
+              depth_limit: int = 4,
               force_terminating_on_depth_limit: bool = True,
               batch_size: int = 2,
               temperature: float = 0.8,
@@ -64,30 +80,14 @@ def rap_gsm8k(base_model: LanguageModel,
                                init_prompt=prompt,
                                sample_prompt_type="rap",
                                disable_log=disable_log,
-                               disable_tqdm=disable_tqdm)
+                               disable_tqdm=disable_tqdm,
+                               split='train',)
 
     accuracy = evaluator.evaluate(reasoner, num_shot=4, resume=resume, log_dir=log_dir)
-    print(accuracy)
 
 
-if __name__ == '__main__':
-    import os
-    import sys
-    import json
-    import warnings
-    import fire
-    import random
-
-    llama_ckpts = os.environ.get("LLAMA_CKPTS", None)
-    llama_2_ckpts = os.environ.get("LLAMA2_CKPTS", None)
-    llama_3_ckpts = os.environ.get("LLAMA3_CKPTS", None)
-
-    local_rank = int(os.environ.get("LOCAL_RANK", 0))
-    if local_rank != 0:
-        sys.stdout = open(os.devnull, 'w')
-        warnings.filterwarnings('ignore')
-
-    def main(base_lm: Literal['llama', 'llama.cpp', 'llama-2', 'hf', 'exllama', 'llama-3'] = 'llama-3',
+def main(base_lm: Literal['llama', 'llama.cpp', 'llama-2', 'hf', 'exllama', 'llama-3'] = 'llama-3',
+         
              llama_ckpts: str = llama_ckpts,
              llama_2_ckpts: str = llama_2_ckpts,
              llama_3_ckpts: str = llama_3_ckpts,
@@ -135,7 +135,7 @@ if __name__ == '__main__':
             base_model = Llama3Model(llama_3_ckpts, llama_size, max_batch_size=batch_size,max_seq_len=4096)
         elif base_lm == 'hf':
             from reasoners.lm import HFModel
-            base_model = HFModel(hf_path, hf_path, max_batch_size=batch_size, max_new_tokens=512,
+            base_model = HFModel(hf_path, hf_path, max_batch_size=batch_size, max_new_tokens=200,
                                  peft_pth=hf_peft_path, quantized=hf_quantized, load_awq_pth=hf_load_awq_path)
         elif base_lm == 'exllama':
             from reasoners.lm import ExLlamaModel
@@ -152,4 +152,25 @@ if __name__ == '__main__':
                   **kwargs)
 
 
-    fire.Fire(main)
+if __name__ == '__main__':
+    os.environ['CUDA_VISIBLE_DEVICES'] = '0,1'
+    os.environ['RANK'] = '0'
+    os.environ['WORLD_SIZE'] = '2'
+    os.environ['MASTER_ADDR'] = 'localhost'
+    os.environ['MASTER_PORT'] = '12345'
+    repo_path = "/mnt/nas/jaehyeok/llm-reasoners"
+
+    base_lm = 'hf'
+    hf_path = 'meta-llama/Llama-2-7b-hf'
+    batch_size = 2
+    useful_prompt = os.path.join(repo_path, 'examples/RAP/gsm8k/prompts/useful_examples.json')
+    prompt = os.path.join(repo_path, 'examples/RAP/gsm8k/prompts/prompt_pool.json')
+
+
+    main(
+        base_lm=base_lm,
+        hf_path=hf_path,
+        batch_size=batch_size,
+        useful_prompt=useful_prompt, 
+        prompt=prompt,
+    )

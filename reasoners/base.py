@@ -14,6 +14,7 @@ from datetime import datetime
 import os, sys, pickle
 from tqdm import tqdm
 import torch
+
 State = TypeVar("State")
 Action = TypeVar("Action")
 Example = TypeVar("Example")
@@ -208,7 +209,6 @@ class Evaluator():
         except:
             algo_name = "unknown"
 
-        
         if not torch.distributed.is_initialized() or torch.distributed.get_rank() == 0:
             if log_dir is None:
                 log_dir = f'logs/{self._dataset_name}_'\
@@ -229,12 +229,32 @@ class Evaluator():
                                             initial=resume,
                                             desc=self._dataset_name,
                                             disable=self.disable_tqdm)):
-            
+            model_prompt = self.sample_prompt(
+                shuffle_prompt=shuffle_prompt,
+                num_shot=num_shot,
+            )
             algo_output = reasoner(self.input_processor(example),
-                                    prompt=self.sample_prompt(
-                                        shuffle_prompt=shuffle_prompt,
-                                        num_shot=num_shot))
+                                    prompt=model_prompt)
+            # queue = [algo_output.tree]
+            # while len(queue) > 0:
+            #     curr = queue.pop(0)
+            #     print(curr.state)
+            #     print("="*20)
+            #     if curr.children is not None and len(curr.children) > 0:
+            #         queue += curr.children
             
+            # for i, node in enumerate(algo_output.terminal_nodes):
+            #     print(f"NODE ID: {i}")
+            #     print(node.action)
+            #     print("==="*10)
+            # input()
+            # if isinstance(result, tuple):
+
+            #     algo_output = result[0]
+            #     root = result[1]
+            # else:
+            #     algo_output = result
+                
             output = self.output_extractor(algo_output)
             answer = self.answer_extractor(example)
             correct = self.eval_output(answer, output)
@@ -242,6 +262,18 @@ class Evaluator():
             accuracy = correct_count / (i + 1)
             log_str = f'Case #{resume + i + 1}: {correct=}, {output=}, {answer=};'\
                         f'{accuracy=:.3f} ({correct_count}/{i + 1})'
+
+            # # If correct, extract MCTS search tree MCTS
+            # if correct:
+            #     num_nodes = 0
+            #     queue = [root]
+            #     while len(queue) > 0:
+            #         num_nodes += 1
+            #         curr = queue.pop(0)
+            #         if curr.children is not None:
+            #             queue += curr.children
+            #     print(f"NUM NODES: {num_nodes}")
+            
             tqdm.write(log_str)
 
             if (not self.disable_log) and \
@@ -251,6 +283,7 @@ class Evaluator():
             
                 with open(os.path.join(log_dir, 'algo_output', f'{resume + i + 1}.pkl'), 'wb')  as f:
                     pickle.dump(algo_output, f)
+            
         
         return accuracy
 
@@ -303,7 +336,7 @@ class Evaluator():
                 for k in range(len(terminal_state)):
                     path += terminal_state[k].sub_question + " " + terminal_state[k].sub_answer + " "
                 save_list.append(path)
-                output = self.output_extractor(algo_output)
+                output = self.output_exctor(algo_output)
                 output_list.append(output)
                 answer = self.answer_extractor(example)
             from collections import Counter

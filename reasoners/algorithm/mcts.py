@@ -341,4 +341,4 @@ class MCTS(SearchAlgorithm, Generic[State, Action, Example]):
                 tree_state_after_each_iter=result.tree_state_after_each_iter,
                 aggregated_result=self.aggregator(result.tree_state),
             )
-        return result
+        return result, self.root
