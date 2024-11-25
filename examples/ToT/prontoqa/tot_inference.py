@@ -223,16 +223,16 @@ def main(
 
 if __name__ == '__main__':
     import os
-    os.environ['CUDA_VISIBLE_DEVICES'] = '7'
+    os.environ['CUDA_VISIBLE_DEVICES'] = '4,5,6,7'
     os.environ['RANK'] = '0'
-    os.environ['WORLD_SIZE'] = '1'
+    os.environ['WORLD_SIZE'] = '4'
     os.environ['MASTER_ADDR'] = 'localhost'
     os.environ['MASTER_PORT'] = '12345'
     fire.Fire(main)
 
 # CUDA_VISIBLE_DEVICES=0 python examples/tot/prontoqa/inference_tot.py --depth_limit 10 --model_dir $LLAMA2_CKPTS --beam_size 10 --temperature 0.8 --reward_aggregator mean --search_algo beam > debug_bfs.log
 
-# CUDA_VISIBLE_DEVICES=0 python examples/ToT/prontoqa/tot_inference.py --base_lm hf --depth_limit 5 --hf_path meta-llama/Llama-2-7b-hf --total_states 10 --temperature 0.8 --search_algo dfs --max_per_state 3 > debug_dfs.log
+# python examples/ToT/prontoqa/tot_inference.py --base_lm hf --depth_limit 10 --hf_path meta-llama/Meta-Llama-3-8B --temperature 0.8 --search_algo beam --beam_size=10 --batch_size=64
     
     # TODO: 1) remove total state, depth limit 2) 
 # python examples/tot/prontoqa/tot_inference.py --depth_limit 10 --model_dir /data/yi/Llama-2-70B-GPTQ/ --total_states 10 --temperature 0.8 --search_algo dfs --max_per_state 3 > debug_dfs.log
