@@ -233,6 +233,8 @@ class Evaluator():
                 shuffle_prompt=shuffle_prompt,
                 num_shot=num_shot,
             )
+            print(model_prompt)
+            quit()
             algo_output = reasoner(self.input_processor(example),
                                     prompt=model_prompt)
             # queue = [algo_output.tree]
@@ -262,17 +264,6 @@ class Evaluator():
             accuracy = correct_count / (i + 1)
             log_str = f'Case #{resume + i + 1}: {correct=}, {output=}, {answer=};'\
                         f'{accuracy=:.3f} ({correct_count}/{i + 1})'
-
-            # # If correct, extract MCTS search tree MCTS
-            # if correct:
-            #     num_nodes = 0
-            #     queue = [root]
-            #     while len(queue) > 0:
-            #         num_nodes += 1
-            #         curr = queue.pop(0)
-            #         if curr.children is not None:
-            #             queue += curr.children
-            #     print(f"NUM NODES: {num_nodes}")
             
             tqdm.write(log_str)
 
