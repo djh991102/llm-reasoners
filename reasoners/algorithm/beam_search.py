@@ -8,7 +8,6 @@ import random
 from copy import deepcopy
 import itertools
 
-
 class BeamSearchNode:
     id_iter = itertools.count()
 
@@ -50,6 +49,8 @@ class BeamSearchResult(NamedTuple):
     cum_reward: float
     tree: BeamSearchNode
     trace: List[Tuple[Action, State, float]]
+    example_question: str
+    example_query: str
 
 
 class BeamSearch(SearchAlgorithm, Generic[State, Action]):
@@ -194,7 +195,9 @@ class BeamSearch(SearchAlgorithm, Generic[State, Action]):
 
             return [beam[i] for i in topk_beam_idx]
 
-    def __call__(self, world: WorldModel[State, Action, State], config: SearchConfig[State, Action, State]):
+    def __call__(self, example, world: WorldModel[State, Action, State], config: SearchConfig[State, Action, State]):
+        print(example.test_example.question)
+        print(example.test_example.query)
         # reset id
         BeamSearchNode.reset_id()
         
@@ -204,19 +207,22 @@ class BeamSearch(SearchAlgorithm, Generic[State, Action]):
         # Initialize current beam with initial state
         cur_beam = [(root_node, [], 0.0)]  # (node, reward_list, cum_reward)
         terminal_beam = []
+        is_answer_found = False
 
+        gold_state = example.test_example.chain_of_thought + [f"The answer is {example.test_example.answer.lower()}."]
         for depth in range(self.max_depth + 1):
             # when depth == max_depth, we need to add the cur_beam to terminal_beam
             new_beam = []
             cache_for_dedup = set()
+            if is_answer_found:
+                break
 
             for beam_item in cur_beam:
                 node, reward_list, _ = beam_item[:3]
 
                 state = node.state
                 if self.early_terminate and world.is_terminal(state):
-                    terminal_beam.append(beam_item)
-                    
+                    terminal_beam.append(beam_item) 
                 else:
                     
                     if depth == self.max_depth:
@@ -227,8 +233,8 @@ class BeamSearch(SearchAlgorithm, Generic[State, Action]):
                         # deduplicate the actions
                         actions = [a for a in actions if a not in cache_for_dedup]
                         cache_for_dedup.update(actions)
-
                     actions = config.get_actions(state)
+                    print(actions)
 
                     for action in actions:
                         next_state, aux = world.step(state, action)
@@ -263,6 +269,13 @@ class BeamSearch(SearchAlgorithm, Generic[State, Action]):
 
                         # Create new node
                         new_node = BeamSearchNode(state=next_state, action=action, reward=reward, parent=node)
+                        # TSLM data generation purpose                        
+                        if not is_answer_found and next_state == gold_state:
+                            is_answer_found = True
+                            answer_state = next_state
+                            answer_node = new_node
+                            answer_reward = new_reward
+                        ###
 
                         # Add new node to children of current node
                         node.add_child(new_node)
@@ -282,6 +295,18 @@ class BeamSearch(SearchAlgorithm, Generic[State, Action]):
             # Decay the temperature
             if self.temperature_decay:
                 self.temperature *= self.temperature_decay
+
+        if is_answer_found:
+            print(answer_state)
+            return BeamSearchResult(
+            terminal_state=answer_state,
+            terminal_node=answer_node,
+            cum_reward=answer_reward,  # Use the precomputed cum_reward
+            trace=answer_node.get_trace(),
+            tree=root_node,
+            example_question=example.test_example.question,
+            example_query=example.test_example.query,
+        )
 
         if not self.early_terminate:
             # add the cur_beam to terminal_beam
@@ -310,7 +335,7 @@ class BeamSearch(SearchAlgorithm, Generic[State, Action]):
                 trace=[],
                 tree=root_node
             )
-        
+
         best_result = terminal_beam[0]
 
         result = BeamSearchResult(
@@ -318,7 +343,9 @@ class BeamSearch(SearchAlgorithm, Generic[State, Action]):
             terminal_node=best_result[0],
             cum_reward=best_result[2],  # Use the precomputed cum_reward
             trace=best_result[0].get_trace(),
-            tree=root_node
+            tree=root_node,
+            example_question=example.test_example.question,
+            example_query=example.test_example.query,
         )
 
         return result

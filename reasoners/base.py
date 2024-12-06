@@ -182,7 +182,7 @@ class Reasoner(ABC, Generic[State, Action, Example]):
     def __call__(self, example: Example, prompt = None, **kwargs) -> AlgorithmOutput[State]:
         self.world_model.update_example(example, prompt=prompt)
         self.search_config.update_example(example, prompt=prompt)
-        return self.search_algo(self.world_model, self.search_config, **kwargs)
+        return self.search_algo(example, self.world_model, self.search_config, **kwargs)
 
 class Evaluator():
     @abstractmethod
@@ -201,6 +201,7 @@ class Evaluator():
                  shuffle_prompt=True,
                  num_shot=4,
                  resume=0,
+                 num_sample = -1,
                  log_dir=None):
 
         self.dataset = list(self.full_dataset)[resume:]
@@ -214,7 +215,8 @@ class Evaluator():
                 log_dir = f'logs/{self._dataset_name}_'\
                         f'{algo_name}/'\
                         f'{datetime.now().strftime("%m%d%Y-%H%M%S")}'
-            os.makedirs(log_dir, exist_ok=resume > 0)
+            os.makedirs(log_dir, exist_ok=True)
+            # os.makedirs(log_dir, exist_ok=resume > 0)
             os.makedirs(os.path.join(log_dir, 'algo_output'), exist_ok=True)
         
             with open(os.path.join(log_dir, 'args.txt'), 'w') as f:
@@ -224,6 +226,7 @@ class Evaluator():
 
         disable_tqdm = self.disable_tqdm or \
             (torch.distributed.is_initialized() and torch.distributed.get_rank() != 0)
+        cnt = 0
         for i, example in enumerate(tqdm(self.dataset,
                                             total=resume + len(self.dataset),
                                             initial=resume,
@@ -233,8 +236,21 @@ class Evaluator():
                 shuffle_prompt=shuffle_prompt,
                 num_shot=num_shot,
             )
-            print(model_prompt)
-            quit()
+
+            # Fixed
+            model_prompt = """Q: Every natural number is positive. Every Mersenne prime is a prime number. Each prime number is a natural number. Real numbers are not imaginary. Every natural number is an integer. Each integer is a real number. Every real number is a number. Each complex number is imaginary. Every prime number is prime. Mersenne primes are not composite. 3 is a natural number. True or false: 3 is imaginary.
+A: 3 is a natural number. Every natural number is an integer. 3 is an integer. Each integer is a real number. 3 is a real number. Real numbers are not imaginary. 3 is not imaginary. The answer is false.
+
+Q: Vertebrates are chordates. Snakes are cold-blooded. Each mammal is not cold-blooded. Each carnivore is carnivorous. Mammals are vertebrates. Every feline is a carnivore. Animals are multicellular. Every carnivore is a mammal. Bilaterians are animals. Each cat is a feline. Every chordate is a bilaterian. Max is a cat. True or false: Max is cold-blooded.
+A: Max is a cat. Each cat is a feline. Max is a feline. Every feline is a carnivore. Max is a carnivore. Every carnivore is a mammal. Max is a mammal. Each mammal is not cold-blooded. Max is not cold-blooded. The answer is false.
+
+Q: Mammals are warm-blooded. Every carnivore is not herbivorous. Every feline is a carnivore. Each animal is multicellular. Snakes are not warm-blooded. Every cat is a feline. Every mammal is a vertebrate. Vertebrates are animals. Carnivores are mammals. Alex is a feline. True or false: Alex is warm-blooded.
+A: Alex is a feline. Every feline is a carnivore. Alex is a carnivore. Carnivores are mammals. Alex is a mammal. Mammals are warm-blooded. Alex is warm-blooded. The answer is true.
+
+Q: Every butterfly is a lepidopteran. Each arthropod is not bony. Whales are bony. Lepidopterans are insects. Invertebrates are animals. Every insect is an arthropod. Each arthropod is an invertebrate. Insects are six-legged. Animals are multicellular. Polly is a lepidopteran. True or false: Polly is not bony.
+A: Polly is a lepidopteran. Lepidopterans are insects. Polly is an insect. Every insect is an arthropod. Polly is an arthropod. Each arthropod is not bony. Polly is not bony. The answer is true.
+"""
+
             algo_output = reasoner(self.input_processor(example),
                                     prompt=model_prompt)
             # queue = [algo_output.tree]
@@ -257,7 +273,10 @@ class Evaluator():
             # else:
             #     algo_output = result
                 
+            # algo_output.terminal_state.body if terminal_state is not None else ""
             output = self.output_extractor(algo_output)
+
+            # example.test_example.answer
             answer = self.answer_extractor(example)
             correct = self.eval_output(answer, output)
             correct_count += correct
@@ -274,8 +293,9 @@ class Evaluator():
             
                 with open(os.path.join(log_dir, 'algo_output', f'{resume + i + 1}.pkl'), 'wb')  as f:
                     pickle.dump(algo_output, f)
-            
-        
+            cnt += 1
+            if num_sample > 0 and cnt >= num_sample:
+                break
         return accuracy
 
     def evaluate_sc(self,

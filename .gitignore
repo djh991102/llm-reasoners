@@ -22,6 +22,7 @@ build/
 examples/MATH
 *.ipynb
 examples/AQuA_rap/test.ipynb
+examples/CoT/prontoqa/data
 temp_plan
 temp_problem
 

@@ -60,11 +60,10 @@ class ProntoQAToTSearchConfig(SearchConfig[ProntoQAState, ProntoQAAction, Pronto
         eos_token_id=["."]
         output = self.base_model.generate([input_prompt] * self.n_actions, eos_token_id=eos_token_id, hide_input=True, temperature=self.temperature, do_sample=True).text
         ret = [o.strip()[:o.strip().index(".")+1] for o in output]
-        print(ret)
-        # print(f"Input prompt to model.generate: {input_prompt}")
-        # print(f"model generated actions: {ret}")
+        
         # deduplicate
         ret = dict.fromkeys(ret).keys()
+
         return ret
 
     def fast_reward(self, state: ProntoQAState, action: ProntoQAAction) -> tuple[float, dict]:
@@ -121,7 +120,9 @@ def main(
            hf_quantized: Optional[Literal['awq', 'int8', 'fp4', 'nf4']] = None,
            hf_load_awq_path: Optional[str] = None,
            search_algo: str = "beam",
-           resume: int = 0,
+           num_workers:int = 1,
+           worker_idx:int = 0,
+           num_sample_per_worker:int = -1, # Debugging purpose
            depth_limit: int = 6,
            log_dir: Optional[str] = None,
            temperature: float = 0.8,
@@ -189,7 +190,7 @@ def main(
                                 device=torch.device("cuda:0"), 
                                 max_batch_size=1, 
                                 max_new_tokens=200, 
-                                max_seq_length=2048, 
+                                max_seq_length=2048,
                                 mem_map=mem_map)
 
     world_model = ProntoQAToTWorldModel()
@@ -205,34 +206,48 @@ def main(
    
     with open('examples/CoT/prontoqa/data/example_next_steps.json') as f:
         init_prompt = json.load(f)
-    
+
     reasoner = Reasoner(world_model=world_model, search_config=search_config, search_algo=search_algo)
     evaluator = ProntoQAEvaluatorFinal(
         init_prompt=init_prompt['next_steps'],
         sample_prompt_type="cot",
         disable_log=False,
         disable_tqdm=False, dataset = ProntoQADataset.from_file(
-            'examples/CoT/prontoqa/data/345hop_random_true.json'
+            'examples/CoT/prontoqa/data/longface_prontoqa_train.json'
         ),
         output_extractor=output_extractor,
         answer_extractor=lambda x: "\n".join(x.test_example.chain_of_thought[2::2])
     )
+    num_examples = len(evaluator.full_dataset)-2
+    num = int(num_examples / num_workers)
+    rmd = num_examples % num_workers
 
-    accuracy = evaluator.evaluate(reasoner, shuffle_prompt=True, num_shot=4, resume=resume, log_dir=log_dir)
+    if rmd != 0 and rmd > worker_idx:
+        num_sample = num + 1
+    elif rmd != 0:
+        num_sample = num
+    else:
+        num_sample = num
+
+    if rmd == 0:
+        resume = num*worker_idx
+    else:
+        resume = num*worker_idx+(rmd if rmd <= worker_idx else worker_idx)
+
+    accuracy = evaluator.evaluate(reasoner, shuffle_prompt=True, num_shot=4, resume=resume, log_dir=log_dir, num_sample=num_sample_per_worker if num_sample_per_worker != -1 else num_sample)
     print(accuracy)
 
 if __name__ == '__main__':
     import os
-    os.environ['CUDA_VISIBLE_DEVICES'] = '4,5,6,7'
     os.environ['RANK'] = '0'
-    os.environ['WORLD_SIZE'] = '4'
+    os.environ['WORLD_SIZE'] = '1'
     os.environ['MASTER_ADDR'] = 'localhost'
     os.environ['MASTER_PORT'] = '12345'
     fire.Fire(main)
 
 # CUDA_VISIBLE_DEVICES=0 python examples/tot/prontoqa/inference_tot.py --depth_limit 10 --model_dir $LLAMA2_CKPTS --beam_size 10 --temperature 0.8 --reward_aggregator mean --search_algo beam > debug_bfs.log
 
-# python examples/ToT/prontoqa/tot_inference.py --base_lm hf --depth_limit 10 --hf_path meta-llama/Meta-Llama-3-8B --temperature 0.8 --search_algo beam --beam_size=10 --batch_size=64
+# python examples/ToT/prontoqa/tot_inference.py --base_lm hf --depth_limit 10 --hf_path meta-llama/Meta-Llama-3-8B --temperature 0.8 --search_algo beam --beam_size=5 --batch_size=16
     
     # TODO: 1) remove total state, depth limit 2) 
 # python examples/tot/prontoqa/tot_inference.py --depth_limit 10 --model_dir /data/yi/Llama-2-70B-GPTQ/ --total_states 10 --temperature 0.8 --search_algo dfs --max_per_state 3 > debug_dfs.log
