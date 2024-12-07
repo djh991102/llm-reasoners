@@ -22,7 +22,8 @@ build/
 examples/MATH
 *.ipynb
 examples/AQuA_rap/test.ipynb
-examples/CoT/prontoqa/data
+examples/CoT/prontoqa/data/generated_ood_data
+examples/CoT/prontoqa/data/*.json
 temp_plan
 temp_problem
 

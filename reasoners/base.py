@@ -232,70 +232,73 @@ class Evaluator():
                                             initial=resume,
                                             desc=self._dataset_name,
                                             disable=self.disable_tqdm)):
-            model_prompt = self.sample_prompt(
-                shuffle_prompt=shuffle_prompt,
-                num_shot=num_shot,
-            )
+            try:
+                model_prompt = self.sample_prompt(
+                    shuffle_prompt=shuffle_prompt,
+                    num_shot=num_shot,
+                )
 
-            # Fixed
-            model_prompt = """Q: Every natural number is positive. Every Mersenne prime is a prime number. Each prime number is a natural number. Real numbers are not imaginary. Every natural number is an integer. Each integer is a real number. Every real number is a number. Each complex number is imaginary. Every prime number is prime. Mersenne primes are not composite. 3 is a natural number. True or false: 3 is imaginary.
-A: 3 is a natural number. Every natural number is an integer. 3 is an integer. Each integer is a real number. 3 is a real number. Real numbers are not imaginary. 3 is not imaginary. The answer is false.
+                # Fixed
+                model_prompt = """Q: Every natural number is positive. Every Mersenne prime is a prime number. Each prime number is a natural number. Real numbers are not imaginary. Every natural number is an integer. Each integer is a real number. Every real number is a number. Each complex number is imaginary. Every prime number is prime. Mersenne primes are not composite. 3 is a natural number. True or false: 3 is imaginary.
+    A: 3 is a natural number. Every natural number is an integer. 3 is an integer. Each integer is a real number. 3 is a real number. Real numbers are not imaginary. 3 is not imaginary. The answer is false.
 
-Q: Vertebrates are chordates. Snakes are cold-blooded. Each mammal is not cold-blooded. Each carnivore is carnivorous. Mammals are vertebrates. Every feline is a carnivore. Animals are multicellular. Every carnivore is a mammal. Bilaterians are animals. Each cat is a feline. Every chordate is a bilaterian. Max is a cat. True or false: Max is cold-blooded.
-A: Max is a cat. Each cat is a feline. Max is a feline. Every feline is a carnivore. Max is a carnivore. Every carnivore is a mammal. Max is a mammal. Each mammal is not cold-blooded. Max is not cold-blooded. The answer is false.
+    Q: Vertebrates are chordates. Snakes are cold-blooded. Each mammal is not cold-blooded. Each carnivore is carnivorous. Mammals are vertebrates. Every feline is a carnivore. Animals are multicellular. Every carnivore is a mammal. Bilaterians are animals. Each cat is a feline. Every chordate is a bilaterian. Max is a cat. True or false: Max is cold-blooded.
+    A: Max is a cat. Each cat is a feline. Max is a feline. Every feline is a carnivore. Max is a carnivore. Every carnivore is a mammal. Max is a mammal. Each mammal is not cold-blooded. Max is not cold-blooded. The answer is false.
 
-Q: Mammals are warm-blooded. Every carnivore is not herbivorous. Every feline is a carnivore. Each animal is multicellular. Snakes are not warm-blooded. Every cat is a feline. Every mammal is a vertebrate. Vertebrates are animals. Carnivores are mammals. Alex is a feline. True or false: Alex is warm-blooded.
-A: Alex is a feline. Every feline is a carnivore. Alex is a carnivore. Carnivores are mammals. Alex is a mammal. Mammals are warm-blooded. Alex is warm-blooded. The answer is true.
+    Q: Mammals are warm-blooded. Every carnivore is not herbivorous. Every feline is a carnivore. Each animal is multicellular. Snakes are not warm-blooded. Every cat is a feline. Every mammal is a vertebrate. Vertebrates are animals. Carnivores are mammals. Alex is a feline. True or false: Alex is warm-blooded.
+    A: Alex is a feline. Every feline is a carnivore. Alex is a carnivore. Carnivores are mammals. Alex is a mammal. Mammals are warm-blooded. Alex is warm-blooded. The answer is true.
 
-Q: Every butterfly is a lepidopteran. Each arthropod is not bony. Whales are bony. Lepidopterans are insects. Invertebrates are animals. Every insect is an arthropod. Each arthropod is an invertebrate. Insects are six-legged. Animals are multicellular. Polly is a lepidopteran. True or false: Polly is not bony.
-A: Polly is a lepidopteran. Lepidopterans are insects. Polly is an insect. Every insect is an arthropod. Polly is an arthropod. Each arthropod is not bony. Polly is not bony. The answer is true.
-"""
+    Q: Every butterfly is a lepidopteran. Each arthropod is not bony. Whales are bony. Lepidopterans are insects. Invertebrates are animals. Every insect is an arthropod. Each arthropod is an invertebrate. Insects are six-legged. Animals are multicellular. Polly is a lepidopteran. True or false: Polly is not bony.
+    A: Polly is a lepidopteran. Lepidopterans are insects. Polly is an insect. Every insect is an arthropod. Polly is an arthropod. Each arthropod is not bony. Polly is not bony. The answer is true.
+    """
 
-            algo_output = reasoner(self.input_processor(example),
-                                    prompt=model_prompt)
-            # queue = [algo_output.tree]
-            # while len(queue) > 0:
-            #     curr = queue.pop(0)
-            #     print(curr.state)
-            #     print("="*20)
-            #     if curr.children is not None and len(curr.children) > 0:
-            #         queue += curr.children
-            
-            # for i, node in enumerate(algo_output.terminal_nodes):
-            #     print(f"NODE ID: {i}")
-            #     print(node.action)
-            #     print("==="*10)
-            # input()
-            # if isinstance(result, tuple):
-
-            #     algo_output = result[0]
-            #     root = result[1]
-            # else:
-            #     algo_output = result
+                algo_output = reasoner(self.input_processor(example),
+                                        prompt=model_prompt)
+                # queue = [algo_output.tree]
+                # while len(queue) > 0:
+                #     curr = queue.pop(0)
+                #     print(curr.state)
+                #     print("="*20)
+                #     if curr.children is not None and len(curr.children) > 0:
+                #         queue += curr.children
                 
-            # algo_output.terminal_state.body if terminal_state is not None else ""
-            output = self.output_extractor(algo_output)
+                # for i, node in enumerate(algo_output.terminal_nodes):
+                #     print(f"NODE ID: {i}")
+                #     print(node.action)
+                #     print("==="*10)
+                # input()
+                # if isinstance(result, tuple):
 
-            # example.test_example.answer
-            answer = self.answer_extractor(example)
-            correct = self.eval_output(answer, output)
-            correct_count += correct
-            accuracy = correct_count / (i + 1)
-            log_str = f'Case #{resume + i + 1}: {correct=}, {output=}, {answer=};'\
-                        f'{accuracy=:.3f} ({correct_count}/{i + 1})'
-            
-            tqdm.write(log_str)
+                #     algo_output = result[0]
+                #     root = result[1]
+                # else:
+                #     algo_output = result
+                    
+                # algo_output.terminal_state.body if terminal_state is not None else ""
+                output = self.output_extractor(algo_output)
 
-            if (not self.disable_log) and \
-                (not torch.distributed.is_initialized() or torch.distributed.get_rank() == 0):
-                with open(os.path.join(log_dir, 'result.log'), 'a') as f:
-                    print(log_str, file=f)
-            
-                with open(os.path.join(log_dir, 'algo_output', f'{resume + i + 1}.pkl'), 'wb')  as f:
-                    pickle.dump(algo_output, f)
-            cnt += 1
-            if num_sample > 0 and cnt >= num_sample:
-                break
+                # example.test_example.answer
+                answer = self.answer_extractor(example)
+                correct = self.eval_output(answer, output)
+                correct_count += correct
+                accuracy = correct_count / (i + 1)
+                log_str = f'Case #{resume + i + 1}: {correct=}, {output=}, {answer=};'\
+                            f'{accuracy=:.3f} ({correct_count}/{i + 1})'
+                
+                tqdm.write(log_str)
+
+                if (not self.disable_log) and \
+                    (not torch.distributed.is_initialized() or torch.distributed.get_rank() == 0):
+                    with open(os.path.join(log_dir, 'result.log'), 'a') as f:
+                        print(log_str, file=f)
+                
+                    with open(os.path.join(log_dir, 'algo_output', f'{resume + i + 1}.pkl'), 'wb')  as f:
+                        pickle.dump(algo_output, f)
+                cnt += 1
+                if num_sample > 0 and cnt >= num_sample:
+                    break
+            except Exception as e:
+                print(f"Error raised while evaluating Case #{resume + i + 1}: {e}")
         return accuracy
 
     def evaluate_sc(self,
