@@ -172,7 +172,7 @@ def generate_training_examples_custom():
     
     full_dataset= []
     for file in files:
-        if file[:4] == "1hop" or file[:4] == "2hop":
+        if file[:4] == "3hop" or file[:4] == "4hop":
             with open(os.path.join(file_path, file), 'r') as f:
                 data = json.load(f)
             f.close()
@@ -188,11 +188,9 @@ def generate_training_examples_custom():
     for i, item in enumerate(full_dataset):
         ret[f"example{i+1}"] = item
     
-    with open("examples/CoT/prontoqa/data/12hop_random_true.json", 'w') as f:
-        json.dump(ret, f)
-    f.close()
+    return ret
 
-def generate_training_examples_hf():
+def generate_training_examples_hf(idx=None):
     data_path = "longface/prontoqa-train"
     split = "train"
 
@@ -200,18 +198,20 @@ def generate_training_examples_hf():
 
     ret = {}
     for item_idx, item in enumerate(dataset):
-        ret[f"example{item_idx+1}"] = {}
-        for ic_ex_idx, ic_ex in enumerate(IC_FIXED):
-            ret[f"example{item_idx+1}"][f"in_context_example{ic_ex_idx}"] = ic_ex
-        ret[f"example{item_idx+1}"]["test_example"] = convert_hf_to_reasoners_format(item)
+        if idx is not None:
+            if item_idx in idx:
+                curr_len = len(ret)
+                ret[f"example{curr_len+1}"] = {}
+                for ic_ex_idx, ic_ex in enumerate(IC_FIXED):
+                    ret[f"example{curr_len+1}"][f"in_context_example{ic_ex_idx}"] = ic_ex
+                ret[f"example{curr_len+1}"]["test_example"] = convert_hf_to_reasoners_format(item)
+        else:
+            ret[f"example{item_idx+1}"] = {}
+            for ic_ex_idx, ic_ex in enumerate(IC_FIXED):
+                ret[f"example{item_idx+1}"][f"in_context_example{ic_ex_idx}"] = ic_ex
+            ret[f"example{item_idx+1}"]["test_example"] = convert_hf_to_reasoners_format(item)
     
-    for k,v in ret.items():
-        print(v["test_example"])
-        input()
-    
-    with open("examples/CoT/prontoqa/data/longface_prontoqa_train.json", 'w') as f:
-        json.dump(ret, f)
-    f.close()
+    return ret
     
 
 def convert_hf_to_reasoners_format(data):
@@ -264,5 +264,14 @@ data_gen_fn = {
 if __name__ == '__main__':
     random.seed(42)
 
-    data_gen_method = "hf"
-    data_gen_fn[data_gen_method]()
+    data_gen_method = "custom"
+    data = data_gen_fn[data_gen_method]()
+
+    if data_gen_method == "hf":
+        file_path = "examples/CoT/prontoqa/data/longface_prontoqa_train.json"
+    else:
+        file_path = "examples/CoT/prontoqa/data/generated_ood_train.json"
+
+    with open(file_path, 'w') as f:
+        json.dump(data, f)
+    f.close()

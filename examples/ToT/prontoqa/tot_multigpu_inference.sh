@@ -2,18 +2,14 @@ base_lm="hf"
 hf_path="meta-llama/Meta-Llama-3-8B"
 search_algo="beam"
 
-IFS=',' read -ra GPU_ARRAY <<< "0,1,2,3"
+IFS=',' read -ra GPU_ARRAY <<< "0"
 NUM_GPUS=${#GPU_ARRAY[@]}
 
-num_sample=4
-if [ $num_sample < $NUM_GPUS ]; then
-    echo "Number of sample should be larger than number of workers"
-    exit 1
-fi
+log_dir="logs/prontoqa_generated_OOD_BeamSearch"
 
-# BFS hypterparameter
-depth_limit=10
-beam_size=10
+# BFS hyperparameter
+depth_limit=13
+beam_size=5
 
 # Launch process on each GPU in parallel
 for i in "${!GPU_ARRAY[@]}"; do
@@ -27,10 +23,9 @@ for i in "${!GPU_ARRAY[@]}"; do
     --temperature 0.8 \
     --search_algo ${search_algo} \
     --beam_size ${beam_size} \
-    --batch_size 16 &
+    --log_dir ${log_dir} \
+    --batch_size 32 &
 done
+
 # Wait for all background processes to complete
 wait
-
-# # Combine logs
-# cat logs/BeamSearch_*/ > logs/BeamSearch_combined.log

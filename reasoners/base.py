@@ -13,7 +13,6 @@ import torch
 from datetime import datetime
 import os, sys, pickle
 from tqdm import tqdm
-import torch
 
 State = TypeVar("State")
 Action = TypeVar("Action")
@@ -202,7 +201,8 @@ class Evaluator():
                  num_shot=4,
                  resume=0,
                  num_sample = -1,
-                 log_dir=None):
+                 log_dir=None,
+                 pass_idx = None,):
 
         self.dataset = list(self.full_dataset)[resume:]
         try:
@@ -232,13 +232,15 @@ class Evaluator():
                                             initial=resume,
                                             desc=self._dataset_name,
                                             disable=self.disable_tqdm)):
+            if pass_idx is not None and (resume + i) in pass_idx:
+                continue
             try:
                 model_prompt = self.sample_prompt(
                     shuffle_prompt=shuffle_prompt,
                     num_shot=num_shot,
                 )
 
-                # Fixed
+                # Fixed in context examples
                 model_prompt = """Q: Every natural number is positive. Every Mersenne prime is a prime number. Each prime number is a natural number. Real numbers are not imaginary. Every natural number is an integer. Each integer is a real number. Every real number is a number. Each complex number is imaginary. Every prime number is prime. Mersenne primes are not composite. 3 is a natural number. True or false: 3 is imaginary.
     A: 3 is a natural number. Every natural number is an integer. 3 is an integer. Each integer is a real number. 3 is a real number. Real numbers are not imaginary. 3 is not imaginary. The answer is false.
 
@@ -250,31 +252,9 @@ class Evaluator():
 
     Q: Every butterfly is a lepidopteran. Each arthropod is not bony. Whales are bony. Lepidopterans are insects. Invertebrates are animals. Every insect is an arthropod. Each arthropod is an invertebrate. Insects are six-legged. Animals are multicellular. Polly is a lepidopteran. True or false: Polly is not bony.
     A: Polly is a lepidopteran. Lepidopterans are insects. Polly is an insect. Every insect is an arthropod. Polly is an arthropod. Each arthropod is not bony. Polly is not bony. The answer is true.
-    """
-
+    """ 
                 algo_output = reasoner(self.input_processor(example),
                                         prompt=model_prompt)
-                # queue = [algo_output.tree]
-                # while len(queue) > 0:
-                #     curr = queue.pop(0)
-                #     print(curr.state)
-                #     print("="*20)
-                #     if curr.children is not None and len(curr.children) > 0:
-                #         queue += curr.children
-                
-                # for i, node in enumerate(algo_output.terminal_nodes):
-                #     print(f"NODE ID: {i}")
-                #     print(node.action)
-                #     print("==="*10)
-                # input()
-                # if isinstance(result, tuple):
-
-                #     algo_output = result[0]
-                #     root = result[1]
-                # else:
-                #     algo_output = result
-                    
-                # algo_output.terminal_state.body if terminal_state is not None else ""
                 output = self.output_extractor(algo_output)
 
                 # example.test_example.answer

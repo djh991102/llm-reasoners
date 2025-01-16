@@ -196,8 +196,13 @@ class BeamSearch(SearchAlgorithm, Generic[State, Action]):
             return [beam[i] for i in topk_beam_idx]
 
     def __call__(self, example, world: WorldModel[State, Action, State], config: SearchConfig[State, Action, State]):
-        print(example.test_example.question)
-        print(example.test_example.query)
+        self.early_terminate = False
+        test_example_question = example.test_example.question
+        test_example_query = example.test_example.query
+        gold_trajectory = example.test_example.chain_of_thought
+        print(test_example_question)
+        print(test_example_query)
+
         # reset id
         BeamSearchNode.reset_id()
         
@@ -233,8 +238,29 @@ class BeamSearch(SearchAlgorithm, Generic[State, Action]):
                         # deduplicate the actions
                         actions = [a for a in actions if a not in cache_for_dedup]
                         cache_for_dedup.update(actions)
-                    actions = config.get_actions(state)
-                    print(actions)
+                    actions = config.get_actions(state, test_example_question)
+
+                    # EDITED: EXPLICITLY ADD THE GOLD TRAJECTORY ===
+                    curr_len = len(state)
+                    if curr_len <= len(gold_trajectory):
+                        if curr_len == len(gold_trajectory) and gold_trajectory == state:
+                            gold_action = f"The answer is {example.test_example.answer.lower()}."
+                            if gold_action not in actions:
+                                print(f"ADDED {gold_action}")
+                                if len(actions) == self.beam_size:
+                                    actions[-1] = gold_action
+                                else:
+                                    actions.append(gold_action)
+                        elif gold_trajectory[:curr_len] == state:
+                            gold_action = gold_trajectory[curr_len]
+                            if gold_action not in actions:
+                                print(f"ADDED {gold_action}")
+                                if len(actions) == self.beam_size:
+                                    actions[-1] = gold_action
+                                else:
+                                    actions.append(gold_action)
+                                
+                    # EOL ===
 
                     for action in actions:
                         next_state, aux = world.step(state, action)
@@ -287,10 +313,11 @@ class BeamSearch(SearchAlgorithm, Generic[State, Action]):
 
             # Sort new beam by reward
             # print(new_beam)
-            new_beam.sort(key=lambda x: x[2], reverse=True)
+            # new_beam.sort(key=lambda x: x[2], reverse=True)
 
             # Sample from new beam
-            cur_beam = self._sample(new_beam)
+            # cur_beam = self._sample(new_beam)
+            cur_beam = new_beam
 
             # Decay the temperature
             if self.temperature_decay:

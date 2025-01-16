@@ -49,8 +49,7 @@ class ProntoQAToTSearchConfig(SearchConfig[ProntoQAState, ProntoQAAction, Pronto
         self.temperature = temperature
         self.base_model = base_model
         assert temperature > 0, "Temperature = 0 indicates greedy decoding. There is no point running multiple chains"
-    def get_actions(self, state: ProntoQAState) -> list[ProntoQAAction]:
-        # print(f"state: {state}\n")
+    def get_actions(self, state: ProntoQAState, test_example_question: str) -> list[ProntoQAAction]:
         input_prompt = self.prompt
         input_prompt += "Q: " + self.example.test_example.question + " " + self.example.test_example.query + "\nA:"
 
@@ -59,10 +58,30 @@ class ProntoQAToTSearchConfig(SearchConfig[ProntoQAState, ProntoQAAction, Pronto
         #eos_token_id=29889
         eos_token_id=["."]
         output = self.base_model.generate([input_prompt] * self.n_actions, eos_token_id=eos_token_id, hide_input=True, temperature=self.temperature, do_sample=True).text
-        ret = [o.strip()[:o.strip().index(".")+1] for o in output]
+        ret = []
+        for o in output:
+            if "." in o:
+                ret.append(o.strip()[:o.strip().index(".")+1])
+        
         
         # deduplicate
-        ret = dict.fromkeys(ret).keys()
+        ret = list(dict.fromkeys(ret).keys())
+
+        # EDITED: REMOVE MODEL HALLUCINATION ===
+        filtered_ret = []
+        for item in ret:
+            if len(state) % 2 == 1:
+                if "The answer is " not in item:
+                    if item in test_example_question:
+                        filtered_ret.append(item)
+                else:
+                    filtered_ret.append(item)
+            else:
+                filtered_ret.append(item)
+
+        if len(filtered_ret) > 0:
+            ret = filtered_ret
+        # EOL ===
 
         return ret
 
@@ -213,12 +232,21 @@ def main(
         sample_prompt_type="cot",
         disable_log=False,
         disable_tqdm=False, dataset = ProntoQADataset.from_file(
-            'examples/CoT/prontoqa/data/longface_prontoqa_train.json'
+            'examples/CoT/prontoqa/data/merged_345hop_random_true.json'
         ),
         output_extractor=output_extractor,
         answer_extractor=lambda x: "\n".join(x.test_example.chain_of_thought[2::2])
     )
-    num_examples = len(evaluator.full_dataset)-2
+
+    full_log_path = os.path.join(log_dir, "algo_output")
+
+    files = [f for f in os.listdir(full_log_path) if os.path.isfile(os.path.join(full_log_path, f))]
+    pass_idx = []
+    for file in files:
+        log_num = int(file.split(".pkl")[0].strip())
+        pass_idx.append(log_num-1)
+
+    num_examples = len(evaluator.full_dataset)-1
     num = int(num_examples / num_workers)
     rmd = num_examples % num_workers
 
@@ -234,7 +262,7 @@ def main(
     else:
         resume = num*worker_idx+(rmd if rmd <= worker_idx else worker_idx)
 
-    accuracy = evaluator.evaluate(reasoner, shuffle_prompt=True, num_shot=4, resume=resume, log_dir=log_dir, num_sample=num_sample_per_worker if num_sample_per_worker != -1 else num_sample)
+    accuracy = evaluator.evaluate(reasoner, shuffle_prompt=True, num_shot=4, resume=resume, log_dir=log_dir, num_sample=num_sample_per_worker if num_sample_per_worker != -1 else num_sample, pass_idx = pass_idx)
     print(accuracy)
 
 if __name__ == '__main__':
@@ -247,7 +275,7 @@ if __name__ == '__main__':
 
 # CUDA_VISIBLE_DEVICES=0 python examples/tot/prontoqa/inference_tot.py --depth_limit 10 --model_dir $LLAMA2_CKPTS --beam_size 10 --temperature 0.8 --reward_aggregator mean --search_algo beam > debug_bfs.log
 
-# python examples/ToT/prontoqa/tot_inference.py --base_lm hf --depth_limit 10 --hf_path meta-llama/Meta-Llama-3-8B --temperature 0.8 --search_algo beam --beam_size=5 --batch_size=16
+# python examples/ToT/prontoqa/tot_inference.py --base_lm hf --depth_limit 10 --hf_path meta-llama/Meta-Llama-3-8B --temperature 0.8 --search_algo beam --beam_size=10 --batch_size=16
     
     # TODO: 1) remove total state, depth limit 2) 
 # python examples/tot/prontoqa/tot_inference.py --depth_limit 10 --model_dir /data/yi/Llama-2-70B-GPTQ/ --total_states 10 --temperature 0.8 --search_algo dfs --max_per_state 3 > debug_dfs.log
