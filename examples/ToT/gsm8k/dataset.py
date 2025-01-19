@@ -58,7 +58,7 @@ class GSM8kDataset:
 
 # Sample usage
 if __name__ == "__main__":
-    pronto_qa_dataset = GSM8kDataset.from_file('/home/doyoung/llm-reasoners/examples/CoT/gsm8k/data/ToT_test.json')
+    pronto_qa_dataset = GSM8kDataset.from_file('/home/doyoung/llm-reasoners/examples/CoT/gsm8k/data/ToT_train.json')
 
     for i, example in enumerate(pronto_qa_dataset):
         print(example)

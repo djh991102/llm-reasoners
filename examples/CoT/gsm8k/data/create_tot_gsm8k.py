@@ -14,6 +14,9 @@ for i, example in enumerate(dataset):
     
     # Split the answer into sentences for the chain of thought
     chain_of_thought = cot.split('\n')[:-1]
+    for j in range(len(chain_of_thought)):
+        if not chain_of_thought[j].strip().endswith('.'):
+            chain_of_thought[j] = chain_of_thought[j].strip() + '.'
     answer = cot.split('#### ')[-1]
     # Create the structured example
     structured_example = {
@@ -28,7 +31,7 @@ for i, example in enumerate(dataset):
     # Add the structured example to the processed data
     processed_data[f"example_{i+1}"] = structured_example
 # Define the output file path
-output_file_path = "/home/doyoung/llm-reasoners/examples/CoT/gsm8k/data/ToT_test.json"
+output_file_path = "/home/doyoung/llm-reasoners/examples/CoT/gsm8k/data/ToT_train.json"
 
 # Write the processed data to the JSON file
 with open(output_file_path, 'w') as output_file:

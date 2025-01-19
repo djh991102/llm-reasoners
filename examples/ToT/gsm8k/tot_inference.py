@@ -153,22 +153,19 @@ Answer: yes'''
         dedup_filtered = [ret[i] for i in range(n) if i not in filtered]
         ret = dedup_filtered
 
-        print(f"actions after filtering: {ret} ({len(ret)} actions)")
-        print(test_example_question)
         # EDITED: REMOVE MODEL HALLUCINATION ===
         filtered_ret = []
         for item in ret:
-            if "The answer is " not in item:
-                if item in test_example_question:
-                    filtered_ret.append(item)
-            else:
-                filtered_ret.append(item)
-
-        if len(filtered_ret) > 0:
-            ret = filtered_ret
+            ### HEURISTICS ###
+            if item.startswith('Q.') or item.startswith('A.') or not item.endswith('.') or item.replace('.','').replace(',','').replace('%','').replace(' ','').isnumeric():
+                continue
+            if item.replace('.','').replace(',','').replace('%','').replace(' ','')=='':
+                continue
+            filtered_ret.append(item)
+        print(f"actions after filtering: {filtered_ret} ({len(filtered_ret)} actions)")
         # EOL ===
 
-        return ret
+        return filtered_ret
 
     def fast_reward(self, state: GSM8kState, action: GSM8kAction) -> tuple[float, dict]:
         return 0, {}
@@ -194,6 +191,7 @@ def main(
            add_gold: str = "gold",
            temperature: float = 0.8,
            mem_map: str = [16, 22],
+           gpu_memory_utilization: float=0.9,
            **search_algo_params):
 
     if search_algo == "beam":
@@ -250,6 +248,10 @@ def main(
         from reasoners.lm import HFModel
         base_model = HFModel(hf_path, hf_path, max_batch_size=batch_size, max_new_tokens=64,
                                 peft_pth=hf_peft_path, quantized=hf_quantized, load_awq_pth=hf_load_awq_path)
+    elif base_lm == 'vllm':
+        from reasoners.lm import VLLMModel
+        base_model = VLLMModel(hf_path, hf_path, max_batch_size=batch_size, max_new_tokens=64,
+                                gpu_memory_utilization=gpu_memory_utilization)
     else:
         from reasoners.lm import ExLlamaModel  # Maybe other transformer models also support
         base_model = ExLlamaModel(model_dir, 
@@ -283,7 +285,7 @@ def main(
         disable_log=False,
         disable_tqdm=False,
         dataset = GSM8kDataset.from_file(
-            'examples/CoT/gsm8k/data/ToT_test.json'
+            'examples/CoT/gsm8k/data/ToT_train.json'
         ),
         output_extractor=output_extractor,
         answer_extractor=lambda x: x.test_example.answer
