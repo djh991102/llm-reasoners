@@ -42,19 +42,24 @@ class ProntoQAEvaluatorFinal(Evaluator):
     def sample_prompt(self,
                       shuffle_prompt=True,
                       num_shot=4):
-        if shuffle_prompt:
-            ret = random.sample(list(self.init_prompt), k=num_shot)
-        else:
-            ret = self.init_prompt[:num_shot]
-
         if self.sample_prompt_type == "rap":
-            return ret
+            if shuffle_prompt:
+                prompt = random.sample(list(self.init_prompt), k=num_shot)
+            else:
+                prompt = self.init_prompt[:num_shot]
 
         elif self.sample_prompt_type == "cot":
-            # cot or tot
-            return get_cot_prompt(ret)
+            prompt = {}
+            if shuffle_prompt:
+                examples = random.sample(self.init_prompt["cot_pool"], num_shot)
+            else:
+                examples = self.init_prompt["cot_pool"][:num_shot]
+            prompt["cot"] = "\n".join(examples) + "\n" + self.init_prompt["prefix"]
+            return prompt
         else:
             raise NotImplementedError
+        
+        return prompt
 
     def eval_output(self, answer, output):
         if output is None:

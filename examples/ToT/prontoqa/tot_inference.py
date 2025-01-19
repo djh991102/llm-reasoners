@@ -10,13 +10,10 @@ import os
 from dataset import ProntoQADataset, ProntoQAExample
 from reasoners import Reasoner
 import torch
-import prompts.finish
-import prompts.next_step
-import prompts.valid_tot
 import numpy as np
 import random
 from reasoners import WorldModel, SearchConfig
-from reasoners.algorithm import MCTS, BeamSearch, DFS
+from reasoners.algorithm import BeamSearch, DFS
 from reasoners.benchmark import ProntoQAEvaluatorFinal
 
 ProntoQAState = list[str]
@@ -43,26 +40,39 @@ class ProntoQAToTWorldModel(WorldModel[ProntoQAState, ProntoQAAction, ProntoQAEx
         return False
     
 class ProntoQAToTSearchConfig(SearchConfig[ProntoQAState, ProntoQAAction, ProntoQAExample]):
-    def __init__(self, base_model, n_actions=5, temperature=0.8) -> None:
+    def __init__(self, base_model, n_actions=5, add_gold='gold',temperature=0.8) -> None:
         super().__init__()
         self.n_actions = n_actions
         self.temperature = temperature
         self.base_model = base_model
+        self.add_gold = add_gold
         assert temperature > 0, "Temperature = 0 indicates greedy decoding. There is no point running multiple chains"
     def get_actions(self, state: ProntoQAState, test_example_question: str) -> list[ProntoQAAction]:
-        input_prompt = self.prompt
-        input_prompt += "Q: " + self.example.test_example.question + " " + self.example.test_example.query + "\nA:"
-
-        # print(f"input_prompt: '{input_prompt}'\n")
+        input_prompt = self.prompt['cot'].replace("{QUESTION}", self.example.test_example.question).replace("{QUERY}", self.example.test_example.query)
         input_prompt += "".join([" " + s for s in state])
-        #eos_token_id=29889
+        
         eos_token_id=["."]
-        output = self.base_model.generate([input_prompt] * self.n_actions, eos_token_id=eos_token_id, hide_input=True, temperature=self.temperature, do_sample=True).text
         ret = []
+        if self.add_gold == "gold":
+            curr_len = len(state)
+            gold_trajectory = self.example.test_example.chain_of_thought
+            if curr_len <= len(gold_trajectory):
+                if curr_len == len(gold_trajectory) and gold_trajectory == state:
+                    gold_action = f"The answer is {self.example.test_example.answer.lower()}."
+                    if gold_action not in ret:
+                        print(f"ADDED {gold_action}")
+                        ret.append(gold_action)
+                elif gold_trajectory[:curr_len] == state:
+                    gold_action = gold_trajectory[curr_len]
+                    if gold_action not in ret:
+                        print(f"ADDED {gold_action}")
+                        ret.append(gold_action)
+        
+        output = self.base_model.generate([input_prompt] * self.n_actions, eos_token_id=eos_token_id, hide_input=True, temperature=self.temperature, do_sample=True).text
+
         for o in output:
             if "." in o:
                 ret.append(o.strip()[:o.strip().index(".")+1])
-        
         
         # deduplicate
         ret = list(dict.fromkeys(ret).keys())
@@ -77,63 +87,25 @@ class ProntoQAToTSearchConfig(SearchConfig[ProntoQAState, ProntoQAAction, Pronto
                 else:
                     filtered_ret.append(item)
             else:
+                ### HEURISTICS ###
+                if "1." in item:
+                    continue
                 filtered_ret.append(item)
-
-        if len(filtered_ret) > 0:
-            ret = filtered_ret
         # EOL ===
 
-        return ret
+        return filtered_ret
 
     def fast_reward(self, state: ProntoQAState, action: ProntoQAAction) -> tuple[float, dict]:
-        processed_state = [remove_so_prefix(s) for s in state]
-        processed_action = remove_so_prefix(action)
-        input_prompt = self.prompt
-        input_prompt += "Q: " + self.example.test_example.question + " " + self.example.test_example.query + "\nA:"
-        input_prompt += "".join([" " + s for s in processed_state])
-        candidate = input_prompt + " " + processed_action
-        intuition = self.base_model.get_loglikelihood(input_prompt, 
-            [candidate])[0]
-        
-        # print(f"prompt: {self.prompt}")
-        # print(f"action: {processed_action}")
-        # print("*"*20)
-        # print(f"input_prompt: {input_prompt}")
-        # print("hello")
-        # print(f"state: {processed_state}")
-
-        input_prompt = ""
-        input_prompt += prompts.valid_tot.EXAMPLES
-        input_prompt += prompts.valid_tot.FACTS_FORMAT.format(self.example.test_example.question or "", self.example.test_example.query)
-        input_prompt += prompts.valid_tot.NEXT_STEP_FORMAT.format(',\n'.join(f'"{statement}"' for statement in processed_state))
-        input_prompt += prompts.valid_tot.VALID_PREFIX
-
-        output_logits = self.base_model.get_next_token_logits(
-            input_prompt,
-            candidates=["Yes", "No"]
-        )
-
-        # print(f"input_prompt: {input_prompt}")
-        reward: float = output_logits[0][0].item()
-        reward:float = torch.softmax(torch.tensor(output_logits[0]), dim=0)[0].item()
-        # print(f" reward: {reward}")
-
-        self_eval = reward  
-        # print(f" intuition: {intuition}, self_eval: {self_eval}")
-        return intuition*0.5 + self_eval*0.5, {"intuition": intuition, "self_eval":self_eval}
-
+        return 0, {}
     def reward(self, state, action, **kwargs) -> tuple[float, dict]:
-        # how correct is this last action
-        intuition = kwargs["intuition"]
-        self_eval = kwargs["self_eval"]
-        return intuition*0.5 + self_eval*0.5, {"intuition": intuition, "self_eval":self_eval}
-
+        return 0, {}
 llama_ckpts = os.environ.get("LLAMA_CKPTS", None)
 def main(
            model_dir: str = llama_ckpts,
            base_lm: Literal[ 'llama2',' exllama', 'llama3']  = 'llama2',
            llama_size = "7B",
            batch_size = 4,
+           prompt="examples/CoT/prontoqa/prompts/cot.json",
            hf_path: str = 'meta-llama/Llama-2-13b-hf',
            hf_peft_path: Optional[str] = None,
            hf_quantized: Optional[Literal['awq', 'int8', 'fp4', 'nf4']] = None,
@@ -144,8 +116,10 @@ def main(
            num_sample_per_worker:int = -1, # Debugging purpose
            depth_limit: int = 6,
            log_dir: Optional[str] = None,
+           add_gold: str = "gold",
            temperature: float = 0.8,
            mem_map: str = [16, 22],
+           gpu_memory_utilization: float=0.9, 
            **search_algo_params):
     if log_dir is not None and not os.path.exists(log_dir):
         os.makedirs(log_dir)
@@ -184,7 +158,7 @@ def main(
             print("Error in output extraction,", e)
             return ""
 
-    if base_lm in ['llama2', 'llama3']:    
+    if base_lm in ['llama2', 'llama3']:
         import torch
         import torch.backends.cudnn
         np.random.seed(0)
@@ -203,10 +177,14 @@ def main(
         from reasoners.lm import HFModel
         base_model = HFModel(hf_path, hf_path, max_batch_size=batch_size, max_new_tokens=64,
                                 peft_pth=hf_peft_path, quantized=hf_quantized, load_awq_pth=hf_load_awq_path)
+    elif base_lm == 'vllm':
+        from reasoners.lm import VLLMModel
+        base_model = VLLMModel(hf_path, hf_path, max_batch_size=batch_size, max_new_tokens=64,
+                                gpu_memory_utilization=gpu_memory_utilization)
     else:
         from reasoners.lm import ExLlamaModel  # Maybe other transformer models also support
         base_model = ExLlamaModel(model_dir, 
-                                lora_dir=None, 
+                                lora_dir=None,
                                 device=torch.device("cuda:0"), 
                                 max_batch_size=1, 
                                 max_new_tokens=200, 
@@ -214,7 +192,7 @@ def main(
                                 mem_map=mem_map)
 
     world_model = ProntoQAToTWorldModel()
-    search_config = ProntoQAToTSearchConfig(base_model=base_model, temperature=temperature, n_actions=search_algo_params["beam_size"])
+    search_config = ProntoQAToTSearchConfig(base_model=base_model, temperature=temperature, add_gold=add_gold, n_actions=search_algo_params["beam_size"])
     
     output_extractor = dfs_bw_extractor if search_algo == "dfs" else bfs_pronto_extractor
     if search_algo == "dfs":
@@ -223,16 +201,17 @@ def main(
         search_algo = BeamSearch(**search_algo_params)
     else:
         raise NotImplementedError
-   
-    with open('examples/CoT/prontoqa/data/example_next_steps.json') as f:
-        init_prompt = json.load(f)
+
+    with open(prompt) as f:
+        prompt = json.load(f)
 
     reasoner = Reasoner(world_model=world_model, search_config=search_config, search_algo=search_algo)
     evaluator = ProntoQAEvaluatorFinal(
-        init_prompt=init_prompt['next_steps'],
+        init_prompt=prompt,
         sample_prompt_type="cot",
         disable_log=False,
-        disable_tqdm=False, dataset = ProntoQADataset.from_file(
+        disable_tqdm=False, 
+        dataset = ProntoQADataset.from_file(
             'examples/CoT/prontoqa/data/merged_345hop_random_true.json'
         ),
         output_extractor=output_extractor,
@@ -242,6 +221,7 @@ def main(
     full_log_path = os.path.join(log_dir, "algo_output")
     if not os.path.exists(full_log_path):
         os.makedirs(full_log_path)
+
     files = [f for f in os.listdir(full_log_path) if os.path.isfile(os.path.join(full_log_path, f))]
     pass_idx = []
     for file in files:
@@ -277,7 +257,6 @@ if __name__ == '__main__':
 
 # CUDA_VISIBLE_DEVICES=0 python examples/tot/prontoqa/inference_tot.py --depth_limit 10 --model_dir $LLAMA2_CKPTS --beam_size 10 --temperature 0.8 --reward_aggregator mean --search_algo beam > debug_bfs.log
 
-# python examples/ToT/prontoqa/tot_inference.py --base_lm hf --depth_limit 10 --hf_path meta-llama/Meta-Llama-3-8B --temperature 0.8 --search_algo beam --beam_size=10 --batch_size=16
-    
-    # TODO: 1) remove total state, depth limit 2) 
+# python examples/ToT/prontoqa/tot_inference.py --base_lm hf --depth_limit 13 --hf_path meta-llama/Meta-Llama-3-8B --temperature 0.8 --search_algo beam --beam_size=3 --batch_size=16 --log_dir="logs/prontoqa_Beamsearch"
+
 # python examples/tot/prontoqa/tot_inference.py --depth_limit 10 --model_dir /data/yi/Llama-2-70B-GPTQ/ --total_states 10 --temperature 0.8 --search_algo dfs --max_per_state 3 > debug_dfs.log

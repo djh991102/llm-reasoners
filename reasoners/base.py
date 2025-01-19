@@ -239,19 +239,6 @@ class Evaluator():
                     shuffle_prompt=shuffle_prompt,
                     num_shot=num_shot,
                 )
-                # Fixed in context examples
-    #             model_prompt = """Q: Every natural number is positive. Every Mersenne prime is a prime number. Each prime number is a natural number. Real numbers are not imaginary. Every natural number is an integer. Each integer is a real number. Every real number is a number. Each complex number is imaginary. Every prime number is prime. Mersenne primes are not composite. 3 is a natural number. True or false: 3 is imaginary.
-    # A: 3 is a natural number. Every natural number is an integer. 3 is an integer. Each integer is a real number. 3 is a real number. Real numbers are not imaginary. 3 is not imaginary. The answer is false.
-
-    # Q: Vertebrates are chordates. Snakes are cold-blooded. Each mammal is not cold-blooded. Each carnivore is carnivorous. Mammals are vertebrates. Every feline is a carnivore. Animals are multicellular. Every carnivore is a mammal. Bilaterians are animals. Each cat is a feline. Every chordate is a bilaterian. Max is a cat. True or false: Max is cold-blooded.
-    # A: Max is a cat. Each cat is a feline. Max is a feline. Every feline is a carnivore. Max is a carnivore. Every carnivore is a mammal. Max is a mammal. Each mammal is not cold-blooded. Max is not cold-blooded. The answer is false.
-
-    # Q: Mammals are warm-blooded. Every carnivore is not herbivorous. Every feline is a carnivore. Each animal is multicellular. Snakes are not warm-blooded. Every cat is a feline. Every mammal is a vertebrate. Vertebrates are animals. Carnivores are mammals. Alex is a feline. True or false: Alex is warm-blooded.
-    # A: Alex is a feline. Every feline is a carnivore. Alex is a carnivore. Carnivores are mammals. Alex is a mammal. Mammals are warm-blooded. Alex is warm-blooded. The answer is true.
-
-    # Q: Every butterfly is a lepidopteran. Each arthropod is not bony. Whales are bony. Lepidopterans are insects. Invertebrates are animals. Every insect is an arthropod. Each arthropod is an invertebrate. Insects are six-legged. Animals are multicellular. Polly is a lepidopteran. True or false: Polly is not bony.
-    # A: Polly is a lepidopteran. Lepidopterans are insects. Polly is an insect. Every insect is an arthropod. Polly is an arthropod. Each arthropod is not bony. Polly is not bony. The answer is true.
-    # """ 
                 algo_output = reasoner(self.input_processor(example),
                                         prompt=model_prompt)
                 output = self.output_extractor(algo_output)
