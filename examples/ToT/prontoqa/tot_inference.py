@@ -147,7 +147,8 @@ def main(
            temperature: float = 0.8,
            mem_map: str = [16, 22],
            **search_algo_params):
-
+    if log_dir is not None and not os.path.exists(log_dir):
+        os.makedirs(log_dir)
     if search_algo == "beam":
         search_algo_params |= {"max_depth": depth_limit}
     elif search_algo == "dfs":
@@ -239,7 +240,8 @@ def main(
     )
 
     full_log_path = os.path.join(log_dir, "algo_output")
-
+    if not os.path.exists(full_log_path):
+        os.makedirs(full_log_path)
     files = [f for f in os.listdir(full_log_path) if os.path.isfile(os.path.join(full_log_path, f))]
     pass_idx = []
     for file in files:

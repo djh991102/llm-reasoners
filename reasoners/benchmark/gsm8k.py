@@ -17,13 +17,14 @@ class GSM8KEvaluator(Evaluator):
                  disable_log=False,
                  disable_tqdm=False,
                  sample_prompt_type="l2m",
-                 split='test') -> None:
-
+                 split='test', dataset=None) -> None:
         self.init_prompt = init_prompt
         self.output_extractor = output_extractor
         self.answer_extractor = answer_extractor
-        self.input_processor = lambda x: x["question"]
-        self.full_dataset = datasets.load_dataset('gsm8k', 'main', split=split)
+        self.input_processor = lambda x: x 
+        if dataset is None:
+            self.input_processor= lambda x: x["question"]
+        self.full_dataset = datasets.load_dataset('gsm8k', 'main', split=split) if dataset is None else list(dataset)
         self._dataset_name = 'gsm8k'
         self.disable_log = disable_log
         self.disable_tqdm = disable_tqdm

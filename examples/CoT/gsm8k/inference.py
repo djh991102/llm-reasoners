@@ -7,9 +7,10 @@ from reasoners.lm.gemini_model import BardCompletionModel
 from reasoners.lm.anthropic_model import ClaudeModel
 from reasoners.lm import  Llama2Model, Llama3Model
 import utils
-from typing import Literal
+from typing import Type, Callable, Optional, Literal
 import fire
 import transformers
+import os
 
 class CoTReasoner():
     def __init__(self, base_model, n_sc=1, temperature=0, bs=1):
@@ -21,7 +22,7 @@ class CoTReasoner():
         self.bs = bs
     def __call__(self, example, prompt=None):
         inputs = prompt["cot"].replace("{QUESTION}", example)
-        print(example)
+        print(f"example: {example}")
         outputs = []
         do_sample = True
         if self.temperature == 0 and isinstance(self.base_model, HFModel):
@@ -53,9 +54,21 @@ class CoTReasoner():
                                             temperature=self.temperature,
                                             eos_token_id=eos_token_id).text
         outputs= [o.strip() if o.strip().endswith(".") else o.strip() + "." for o in outputs]
-        print(outputs)
+        print(f"outputs: {outputs}")
         return outputs
-def main(base_lm:Literal['hf', 'google', 'openai', 'anthropic','exllama',"llama2"],model_dir, lora_dir=None, mem_map=None, batch_size=1, prompt="examples/CoT/gsm8k/prompts/cot.json", resume=0, log_dir=None, temperature=0, n_sc=1, quantized='int8',llama_size=None):
+llama_ckpts = os.environ.get("LLAMA_CKPTS", None)
+def main(
+            model_dir: str = llama_ckpts,
+            base_lm: Literal['hf', 'google', 'openai', 'anthropic','exllama',"llama2"] = 'llama2',
+            lora_dir=None, mem_map=None, batch_size=1, prompt="examples/CoT/gsm8k/prompts/cot.json",
+            hf_path: str = 'meta-llama/Llama-2-13b-hf',
+            hf_peft_path: Optional[str] = None,
+            hf_quantized: Optional[Literal['awq', 'int8', 'fp4', 'nf4']] = None,
+            hf_load_awq_path: Optional[str] = None,
+            
+            resume=0,
+            log_dir: Optional[str] = None,
+            temperature=0, n_sc=1, quantized='int8',llama_size=None):
 
     if base_lm == "openai":
         base_model = OpenAIModel("gpt-4-1106-preview", additional_prompt="ANSWER")
@@ -64,7 +77,9 @@ def main(base_lm:Literal['hf', 'google', 'openai', 'anthropic','exllama',"llama2
     elif base_lm == "anthropic":
         base_model = ClaudeModel("claude-3-opus-20240229", additional_prompt="ANSWER")
     elif base_lm == "hf":
-        base_model = HFModel(model_dir, model_dir, quantized=quantized)
+        from reasoners.lm import HFModel
+        base_model = HFModel(hf_path, hf_path, max_batch_size=batch_size, max_new_tokens=64,
+                                peft_pth=hf_peft_path, quantized=hf_quantized, load_awq_pth=hf_load_awq_path)
     elif base_lm == 'llama2':
         base_model = Llama2Model(model_dir, llama_size, max_batch_size=batch_size)
     elif base_lm == 'llama3':
@@ -86,11 +101,6 @@ def main(base_lm:Literal['hf', 'google', 'openai', 'anthropic','exllama',"llama2
     log_dir =  f'logs/gsm8k_'\
                         f'cot/'\
                         f'{datetime.now().strftime("%m%d%Y-%H%M%S")}'
-    if base_lm == 'hf':
-        model_name= model_dir.split('/')[-1]
-    else:
-        model_name = base_lm
-    log_dir = log_dir + f'_{model_name}'
     accuracy = evaluator.evaluate(reasoner, shuffle_prompt=True, num_shot=4, resume=resume, log_dir=log_dir)
     print(f'accuracy: {accuracy:.4f}')
     return 0
