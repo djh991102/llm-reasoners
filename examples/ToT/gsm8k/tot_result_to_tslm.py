@@ -7,7 +7,7 @@ from reasoners.visualization.tree_snapshot import NodeData, TreeSnapshot, EdgeDa
 from reasoners.algorithm.beam_search import BeamSearchNode
 from reasoners.algorithm.dfs import DFSNode
 
-RESULT_DIR = "/home/doyoung/llm-reasoners/logs/"
+RESULT_DIR = "/home/jaehyeok/llm-reasoners/logs/"
 
 def get_search_tree_mcts(tot_results):
     tree_states = tot_results.tree_state_after_each_iter

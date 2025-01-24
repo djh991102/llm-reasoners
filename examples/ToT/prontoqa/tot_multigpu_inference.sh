@@ -2,10 +2,10 @@ base_lm="hf"
 hf_path="meta-llama/Meta-Llama-3-8B"
 search_algo="beam"
 
-IFS=',' read -ra GPU_ARRAY <<< "0,1,2,3"
+IFS=',' read -ra GPU_ARRAY <<< "0, 1, 2, 3"
 NUM_GPUS=${#GPU_ARRAY[@]}
 
-log_dir="logs/prontoqa_generated_OOD_BeamSearch"
+log_dir="logs/prontoqa_1-5hops_train_set_BeamSearch"
 
 # BFS hyperparameter
 depth_limit=13

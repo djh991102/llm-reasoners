@@ -107,7 +107,7 @@ Action 2: She bought 5 bagels, each costing 3 dollars, so she spent 5 x 3 = 15 d
 Do these two actions mean the same thing?
 Answer: yes'''
         #eos_token_id=29889
-        eos_token_id=["."]
+        eos_token_id=[".\n"]
         ret = []
         if self.add_gold == "gold":
             curr_len = len(state)
@@ -161,6 +161,10 @@ Answer: yes'''
                 continue
             if item.replace('.','').replace(',','').replace('%','').replace(' ','')=='':
                 continue
+            if "Q:" in item or item.strip() == "<<" or item.strip() == ">>":
+                continue
+            # if len(item) < 5:
+            #     continue
             filtered_ret.append(item)
         print(f"actions after filtering: {filtered_ret} ({len(filtered_ret)} actions)")
         # EOL ===

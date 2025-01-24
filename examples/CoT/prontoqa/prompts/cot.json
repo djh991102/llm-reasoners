@@ -6,5 +6,5 @@
         "Q: Mammals are warm-blooded. Every carnivore is not herbivorous. Every feline is a carnivore. Each animal is multicellular. Snakes are not warm-blooded. Every cat is a feline. Every mammal is a vertebrate. Vertebrates are animals. Carnivores are mammals. Alex is a feline. True or false: Alex is warm-blooded.\nA: Alex is a feline. Every feline is a carnivore. Alex is a carnivore. Carnivores are mammals. Alex is a mammal. Mammals are warm-blooded. Alex is warm-blooded. The answer is true.",
         "Q: Every butterfly is a lepidopteran. Each arthropod is not bony. Whales are bony. Lepidopterans are insects. Invertebrates are animals. Every insect is an arthropod. Each arthropod is an invertebrate. Insects are six-legged. Animals are multicellular. Polly is a lepidopteran. True or false: Polly is not bony.\nA: Polly is a lepidopteran. Lepidopterans are insects. Polly is an insect. Every insect is an arthropod. Polly is an arthropod. Each arthropod is not bony. Polly is not bony. The answer is true."
     ],
-    "prefix": "Q: {QUESTION} {QUERY}\nA: "
+    "prefix": "Q: {QUESTION} {QUERY}\nA:"
 }

@@ -240,27 +240,27 @@ class BeamSearch(SearchAlgorithm, Generic[State, Action]):
                         cache_for_dedup.update(actions)
                     actions = config.get_actions(state, test_example_question)
 
-                    # EDITED: EXPLICITLY ADD THE GOLD TRAJECTORY ===
-                    curr_len = len(state)
-                    if curr_len <= len(gold_trajectory):
-                        if curr_len == len(gold_trajectory) and gold_trajectory == state:
-                            gold_action = f"The answer is {example.test_example.answer.lower()}."
-                            if gold_action not in actions:
-                                print(f"ADDED {gold_action}")
-                                if len(actions) == self.beam_size:
-                                    actions[-1] = gold_action
-                                else:
-                                    actions.append(gold_action)
-                        elif gold_trajectory[:curr_len] == state:
-                            gold_action = gold_trajectory[curr_len]
-                            if gold_action not in actions:
-                                print(f"ADDED {gold_action}")
-                                if len(actions) == self.beam_size:
-                                    actions[-1] = gold_action
-                                else:
-                                    actions.append(gold_action)
+                    # # EDITED: EXPLICITLY ADD THE GOLD TRAJECTORY ===
+                    # curr_len = len(state)
+                    # if curr_len <= len(gold_trajectory):
+                    #     if curr_len == len(gold_trajectory) and gold_trajectory == state:
+                    #         gold_action = f"The answer is {example.test_example.answer.lower()}."
+                    #         if gold_action not in actions:
+                    #             print(f"ADDED {gold_action}")
+                    #             if len(actions) == self.beam_size:
+                    #                 actions[-1] = gold_action
+                    #             else:
+                    #                 actions.append(gold_action)
+                    #     elif gold_trajectory[:curr_len] == state:
+                    #         gold_action = gold_trajectory[curr_len]
+                    #         if gold_action not in actions:
+                    #             print(f"ADDED {gold_action}")
+                    #             if len(actions) == self.beam_size:
+                    #                 actions[-1] = gold_action
+                    #             else:
+                    #                 actions.append(gold_action)
                                 
-                    # EOL ===
+                    # # EOL ===
 
                     for action in actions:
                         next_state, aux = world.step(state, action)

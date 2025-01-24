@@ -53,6 +53,13 @@ class ProntoQAToTSearchConfig(SearchConfig[ProntoQAState, ProntoQAAction, Pronto
         
         eos_token_id=["."]
         ret = []
+        
+        output = self.base_model.generate([input_prompt] * self.n_actions, eos_token_id=eos_token_id, hide_input=True, temperature=self.temperature, do_sample=True).text
+
+        for o in output:
+            if "." in o:
+                ret.append(o.strip()[:o.strip().index(".")+1])
+        
         if self.add_gold == "gold":
             curr_len = len(state)
             gold_trajectory = self.example.test_example.chain_of_thought
@@ -68,12 +75,6 @@ class ProntoQAToTSearchConfig(SearchConfig[ProntoQAState, ProntoQAAction, Pronto
                         print(f"ADDED {gold_action}")
                         ret.append(gold_action)
         
-        output = self.base_model.generate([input_prompt] * self.n_actions, eos_token_id=eos_token_id, hide_input=True, temperature=self.temperature, do_sample=True).text
-
-        for o in output:
-            if "." in o:
-                ret.append(o.strip()[:o.strip().index(".")+1])
-        
         # deduplicate
         ret = list(dict.fromkeys(ret).keys())
 
@@ -88,7 +89,7 @@ class ProntoQAToTSearchConfig(SearchConfig[ProntoQAState, ProntoQAAction, Pronto
                     filtered_ret.append(item)
             else:
                 ### HEURISTICS ###
-                if "1." in item:
+                if "1." in item or "2." in item or "3." in item or "4." in item or "5." in item:
                     continue
                 filtered_ret.append(item)
         # EOL ===
@@ -212,7 +213,7 @@ def main(
         disable_log=False,
         disable_tqdm=False, 
         dataset = ProntoQADataset.from_file(
-            'examples/CoT/prontoqa/data/merged_345hop_random_true.json'
+            'examples/CoT/prontoqa/data/1-5hops_train_set.json'
         ),
         output_extractor=output_extractor,
         answer_extractor=lambda x: "\n".join(x.test_example.chain_of_thought[2::2])
