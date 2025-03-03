@@ -84,7 +84,9 @@ def get_search_tree_beam(tot_results):
     queue = [tree]
     while len(queue) > 0:
         curr = queue.pop(0)
-        print(curr.action)
+        children = [child.action for child in curr.children]
+        print(f"Parent: {curr.action}, Child: {children}")
+        print('----------')
         if curr.children is not None and len(curr.children) > 0:
             queue += curr.children
     return tree
@@ -96,11 +98,11 @@ search_tree_extraction = {
 }
 
 if __name__ == '__main__':
-    task = "gsm8k_generated_OOD"
+    task = "gsm8k_fast_reward_test_qwen"
     search_algo = "beam"
 
     assert search_algo == "beam" or search_algo == "dfs"
-    sub_path_name = f"{task}_BeamSearch" if "beam" else f"{task}_DFS"
+    sub_path_name = task#f"{task}_BeamSearch" if "beam" else f"{task}_DFS"
 
     log_path_name = ""
     for i in range(1, 10000):

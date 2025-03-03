@@ -7,6 +7,8 @@ import warnings
 import random
 from copy import deepcopy
 import itertools
+import re
+from reasoners.base import AlgorithmOutput
 
 class BeamSearchNode:
     id_iter = itertools.count()
@@ -54,7 +56,7 @@ class BeamSearchResult(NamedTuple):
 
 
 class BeamSearch(SearchAlgorithm, Generic[State, Action]):
-    def __init__(self, beam_size: int, max_depth: int, sampling_strategy: str = 'argmax',
+    def __init__(self, beam_size: int, max_depth: int, add_gold: str, sampling_strategy: str = 'argmax',
                  replace: Optional[bool] = None, temperature: Optional[float] = None,
                  temperature_decay: Optional[float] = None, reject_sample: Optional[bool] = None,
                  reject_min_reward: Optional[float] = None, unbiased: Optional[bool] = None,
@@ -64,6 +66,7 @@ class BeamSearch(SearchAlgorithm, Generic[State, Action]):
         super().__init__(**kwargs)
         self.beam_size = beam_size
         self.max_depth = max_depth
+        self.add_gold = add_gold
         self.sampling_strategy = sampling_strategy
         self.replace = replace
         self.temperature = temperature
@@ -261,46 +264,66 @@ class BeamSearch(SearchAlgorithm, Generic[State, Action]):
                     #                 actions.append(gold_action)
                                 
                     # # EOL ===
-
                     for action in actions:
+                        # print(action, gold_state)
+                        # input()
                         next_state, aux = world.step(state, action)
-
-                        if self.unbiased and self.sampling_strategy == 'stochastic':
-                            # the action should have action.action_prob
-                            try:
-                                fast_reward, fast_reward_aux = config.fast_reward(state, action)
-                                reward, reward_aux = config.reward(state, action, **aux, **fast_reward_aux)
-                                acc_action_prob = reward_aux['acc_action_prob']
-                                cur_action_prob = reward_aux['cur_action_prob']
-                            except KeyError:
-                                raise ValueError(f"If unbiased stochastic sampling is used, \
-                                                   please make sure the reward function returns \
-                                                   a dictionary with keys 'acc_action_prob', which \
-                                                   is the accumulated action probability, and \
-                                                   'cur_action_prob', which is the current action probability.")
+                        if action in gold_state:
+                            reward = 1e64
                         else:
-                            fast_reward, fast_reward_aux = config.fast_reward(state, action)
-                            reward = config.reward(state, action, **aux, **fast_reward_aux)
+                            if self.unbiased and self.sampling_strategy == 'stochastic':
+                                # the action should have action.action_prob
+                                try:
+                                    fast_reward, fast_reward_aux = config.fast_reward(state, action)
+                                    reward, reward_aux = config.reward(state, action, **aux, **fast_reward_aux)
+                                    acc_action_prob = reward_aux['acc_action_prob']
+                                    cur_action_prob = reward_aux['cur_action_prob']
+                                except KeyError:
+                                    raise ValueError(f"If unbiased stochastic sampling is used, \
+                                                    please make sure the reward function returns \
+                                                    a dictionary with keys 'acc_action_prob', which \
+                                                    is the accumulated action probability, and \
+                                                    'cur_action_prob', which is the current action probability.")
+                            else:
+                                fast_reward, fast_reward_aux = config.fast_reward(state, action)
+                                reward = config.reward(state, action, **aux, **fast_reward_aux)
 
-                            # if the reward is a tuple, then it is (reward, aux)
-                            if isinstance(reward, tuple):
-                                reward, reward_aux = reward
+                                # if the reward is a tuple, then it is (reward, aux)
+                                if isinstance(reward, tuple):
+                                    reward, reward_aux = reward
 
                         # Add new reward to list of rewards
                         new_reward_list = reward_list + [reward]
 
                         # Compute new reward
                         new_reward = self.reward_aggregator(new_reward_list)
-                        # print(reward, new_reward_list, new_reward)
 
                         # Create new node
                         new_node = BeamSearchNode(state=next_state, action=action, reward=reward, parent=node)
-                        # TSLM data generation purpose                        
-                        if not is_answer_found and next_state == gold_state:
-                            is_answer_found = True
-                            answer_state = next_state
-                            answer_node = new_node
-                            answer_reward = new_reward
+                        # TSLM data generation purpose
+                        ## matching answer with gold
+                        # TSLM data generation purpose   
+                        if self.add_gold == 'gold':           
+                            if not is_answer_found and next_state == gold_state:
+                                is_answer_found = True
+                                answer_state = next_state
+                                answer_node = new_node
+                                answer_reward = new_reward
+                        else:
+                            match = re.match(r'.*The answer is .*?([ $.0-9,\-=]+).*\..*', next_state[-1])
+                            if match is not None:
+                                answer = match[1].replace(',', '').replace('$', '').replace(' ', '')
+                                if '=' in answer:
+                                    answer = answer[answer.rindex('=') + 1:]
+                                gold_match = re.match(r'.*The answer is .*?([ $.0-9,\-=]+).*\..*', gold_state[-1])  
+                                gold_answer = gold_match[1].replace(',', '').replace('$', '').replace(' ', '')
+                                if '=' in gold_answer:
+                                    gold_answer = gold_answer[gold_answer.rindex('=') + 1:]   
+                                if not is_answer_found and gold_answer == answer:
+                                    is_answer_found = True
+                                    answer_state = next_state
+                                    answer_node = new_node
+                                    answer_reward = new_reward
                         ###
 
                         # Add new node to children of current node
@@ -311,9 +334,7 @@ class BeamSearch(SearchAlgorithm, Generic[State, Action]):
                         else:
                             new_beam.append((new_node, new_reward_list, new_reward))
 
-            # Sort new beam by reward
-            # print(new_beam)
-            # new_beam.sort(key=lambda x: x[2], reverse=True)
+            new_beam.sort(key=lambda x: x[2], reverse=True)
 
             # Sample from new beam
             # cur_beam = self._sample(new_beam)
@@ -349,7 +370,9 @@ class BeamSearch(SearchAlgorithm, Generic[State, Action]):
                                 terminal_state=item[0].state,
                                 cum_reward=item[2],  # Use the precomputed cum_reward
                                 trace=item[0].get_trace(),
-                                tree=root_node
+                                tree=root_node,
+                                example_question=example.test_example.question,
+                                example_query=example.test_example.query,
                                 ) for item in terminal_beam]
 
             return terminal_beam
@@ -360,7 +383,9 @@ class BeamSearch(SearchAlgorithm, Generic[State, Action]):
                 terminal_node=None,
                 cum_reward=0,
                 trace=[],
-                tree=root_node
+                tree=root_node,
+                example_question=example.test_example.question,
+                example_query=example.test_example.query,
             )
 
         best_result = terminal_beam[0]

@@ -80,13 +80,14 @@ John picks 4 bananas on Wednesday. Then he picks 6 bananas on Thursday. On Frida
 "In total, John picks 4 + 10 + 12 = <<4+10+12=26>>26 bananas."
 [EVALUATION] Is the last action good?
 No, the last action was not good. The calculation in Step 2 is incorrect; John picks 6 bananas on Thursday, not 10.
+
 """
 
 QUESTION_FORMAT = """[QUESTION]
-{}
+{question}
 """
 STEPS_FORMAT = """[STEPS]
-{}
+{steps}
 """
-VALID_PREFIX = """[EVALUATION]
+VALID_PREFIX = """[EVALUATION] Is the last action good?
 """

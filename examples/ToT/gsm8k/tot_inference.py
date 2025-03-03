@@ -1,4 +1,5 @@
 from reasoners.lm import ExLlamaModel
+import re
 import json
 import fire
 from typing import Sequence, Any
@@ -12,6 +13,7 @@ from reasoners import Reasoner
 import torch
 import numpy as np
 import random
+import prompts.valid_tot
 from reasoners import WorldModel, SearchConfig
 from reasoners.algorithm import MCTS, BeamSearch, DFS
 from reasoners.benchmark import GSM8KEvaluator
@@ -40,16 +42,55 @@ class GSM8kToTWorldModel(WorldModel[GSM8kState, GSM8kAction, GSM8kExample]):
         return False
     
 class GSM8kToTSearchConfig(SearchConfig[GSM8kState, GSM8kAction, GSM8kExample]):
-    def __init__(self, base_model, temperature=0.8, add_gold='gold', n_actions=5) -> None:
+    def __init__(self, base_model, temperature=0.8, add_gold='gold', n_actions=5, max_new_tokens=64) -> None:
         super().__init__()
         self.n_actions = n_actions
         self.temperature = temperature
         self.base_model = base_model
         self.add_gold = add_gold
+        self.max_new_tokens = max_new_tokens
         assert temperature > 0, "Temperature = 0 indicates greedy decoding. There is no point running multiple chains"
+    def is_balanced(self, item, open_symbol, close_symbol):
+        """
+        Check if the brackets (open_symbol, close_symbol) are balanced
+        and maintain depth 1. Handles multi-character brackets like <<>>.
+        """
+        depth = 0
+        i = 0
+        while i < len(item):
+            # Check for opening bracket
+            if item[i:i+len(open_symbol)] == open_symbol:
+                depth += 1
+                i += len(open_symbol) - 1  # Skip the length of the open symbol
+            # Check for closing bracket
+            elif item[i:i+len(close_symbol)] == close_symbol:
+                depth -= 1
+                i += len(close_symbol) - 1  # Skip the length of the close symbol
+            # Depth validation: Only depth 0 or 1 is valid
+            if depth < 0:
+                return False
+            i += 1
+        # At the end, depth should be 0
+        return depth == 0
+    def deduplicate_by_numbers(self, sentences):
+        seen_combinations = set()
+        deduplicated_sentences = []
+
+        for sentence in sentences:
+            # Extract numbers (including decimals) using regex
+            numbers = re.findall(r'\d+(?:\.\d+)?', sentence)
+            # Convert the list of numbers to a tuple for hashing
+            numbers_tuple = tuple(numbers)
+            
+            if numbers_tuple not in seen_combinations:
+                seen_combinations.add(numbers_tuple)
+                deduplicated_sentences.append(sentence)
+
+        return deduplicated_sentences
+
     def get_actions(self, state: GSM8kState, test_example_question: str) -> list[GSM8kAction]:
         input_prompt = self.prompt["cot"].replace("{QUESTION}", self.example.test_example.query)
-        current_states = "".join([" " + s for s in state])
+        current_states = "\n".join([s for s in state])
         input_prompt += current_states
         validate_prompt = '''Question: There are 15 trees in the grove. Grove workers will plant trees in the grove today. After they are done, there will be 21 trees. How many trees did the grove workers plant today?
 Partial Answer:
@@ -123,36 +164,24 @@ Answer: yes'''
                     if gold_action not in ret:
                         print(f"ADDED {gold_action}")
                         ret.append(gold_action)
-
-        output = self.base_model.generate([input_prompt] * (self.n_actions-len(ret)), eos_token_id=eos_token_id, hide_input=True, temperature=self.temperature, do_sample=True).text
-        
-        for o in output:
-            if "." in o:
-                ret.append(o.strip()[:o.strip().index(".")+1])
-        ret = list(dict.fromkeys(ret).keys())
-                        
-
-        # deduplicate only if base model predicts they are the same
-        filtered = []
-        n = len(ret)
-        # print(f"actions before filtering: {ret}: {n} actions")
-
-        # Fill the equivalence matrix more efficiently
-        for i in range(n):
-            if i not in filtered:  # Skip if this index has been marked as equivalent to a previous one
-                for j in range(i+1, n):  # Only check items after i
-                    if j not in filtered:  # Skip if this index has been marked as equivalent to a previous one
-                        comparison_prompt = f"{validate_prompt}\n\nQuestion: {self.example.test_example.query}\nPartial Answer: {current_states}\nAction 1: {ret[i]}\nAnswer 2: {ret[j]}\nDo these two actions mean the same thing?\nAnswer: "
-                        response = self.base_model.generate([comparison_prompt], temperature=0, do_sample=False).text[0].lower()
-                        if "yes" in response:
-                            filtered.append(j)  # Mark j as equivalent to i
+        preprocessed_output = self.base_model.generate([input_prompt] * (self.n_actions-len(ret)), eos_token_id=eos_token_id, hide_input=True, temperature=self.temperature, do_sample=True)
+        tokens = preprocessed_output.tokens
+        output = preprocessed_output.text        
+        # print(f"initial output: {output}")
+        small_output = []
+        for t, o in zip(tokens, output):
+            is_truncated = len(t) >= self.max_new_tokens 
+            if (not is_truncated):
+                small_output.append(o)
                 
-            # if i not in filtered:  # If i wasn't marked as equivalent to any previous item
-            #     filtered.append(i)
-        # Convert indices back to actual statements, taking only unique items
-        dedup_filtered = [ret[i] for i in range(n) if i not in filtered]
-        ret = dedup_filtered
-
+        for o in small_output:
+            reformatted_output = o.split(".\n")[0].split(". \n")[0].strip()+".".replace("\n", "")
+            ret.append(reformatted_output)
+            # if ".\n" in o:
+            #     ret.append(o.strip()[:o.strip().index(".\n")+1])
+        ret = list(dict.fromkeys(ret).keys())
+        # print(f"ret: {ret}")
+        ret = self.deduplicate_by_numbers(ret)            
         # EDITED: REMOVE MODEL HALLUCINATION ===
         filtered_ret = []
         for item in ret:
@@ -163,18 +192,84 @@ Answer: yes'''
                 continue
             if "Q:" in item or item.strip() == "<<" or item.strip() == ">>":
                 continue
+            if '<<' in item or '>>' in item:
+                if not self.is_balanced(item, '<<', '>>'):
+                    continue
+            if '(' in item or ')' in item:
+                if not self.is_balanced(item, '(', ')'):
+                    continue      
+            if item[-1] in ['=', '*']:
+                continue  
+            ### DeepSeek###
+            if 'Hmm' in item or 'Wait, ' in item or 'But wait, ' in item :
+                continue
+            if "Let me" in item or "let me" in item:
+                continue
+            if item == "Let's compute that." or item == "Let's calculate that." or item == "Let me calculate that.":
+                continue
             # if len(item) < 5:
             #     continue
             filtered_ret.append(item)
-        print(f"actions after filtering: {filtered_ret} ({len(filtered_ret)} actions)")
+
+        # deduplicate only if base model predicts they are the same
+        filtered = []
+        n = len(filtered_ret)
+        # print(f"actions before filtering: {filtered_ret}: {n} actions")
+
+        # Fill the equivalence matrix more efficiently
+        for i in range(n):
+            if i not in filtered:  # Skip if this index has been marked as equivalent to a previous one
+                for j in range(i+1, n):  # Only check items after i
+                    if j not in filtered:  # Skip if this index has been marked as equivalent to a previous one
+                        comparison_prompt = f"{validate_prompt}\n\nQuestion: {self.example.test_example.query}\nPartial Answer: {current_states}\nAction 1: {filtered_ret[i]}\nAnswer 2: {filtered_ret[j]}\nDo these two actions mean the same thing?\nAnswer: "
+                        response = self.base_model.generate([comparison_prompt], temperature=0, do_sample=False).text[0].lower()
+                        if "yes" in response:
+                            filtered.append(j)  # Mark j as equivalent to i
+                
+            # if i not in filtered:  # If i wasn't marked as equivalent to any previous item
+            #     filtered.append(i)
+        # Convert indices back to actual statements, taking only unique items
+        dedup_filtered = [filtered_ret[i] for i in range(n) if i not in filtered]
+        # post-hoc add if gold is accidentally deleted
+        if self.add_gold == "gold":
+            if curr_len <= len(gold_trajectory):
+                if curr_len == len(gold_trajectory) and gold_trajectory == state:
+                    gold_action = f"The answer is {self.example.test_example.answer.lower()}."
+                    if gold_action not in dedup_filtered:
+                        print(f"ADDED {gold_action}")
+                        dedup_filtered.append(gold_action)
+                elif gold_trajectory[:curr_len] == state:
+                    gold_action = gold_trajectory[curr_len]
+                    if gold_action not in dedup_filtered:
+                        print(f"ADDED {gold_action}")
+                        dedup_filtered.append(gold_action)
+
+        print(f"actions after filtering: {dedup_filtered} ({len(dedup_filtered)} actions)")
         # EOL ===
 
-        return filtered_ret
+        return dedup_filtered
 
     def fast_reward(self, state: GSM8kState, action: GSM8kAction) -> tuple[float, dict]:
-        return 0, {}
+        processed_state = [s for s in state] + [action]
+        input_prompt = ""
+        input_prompt += prompts.valid_tot.EXAMPLES
+        input_prompt += prompts.valid_tot.QUESTION_FORMAT.format(question=self.example.test_example.query)
+        input_prompt += prompts.valid_tot.STEPS_FORMAT.format(steps='\n'.join(f'"{statement}"' for statement in processed_state))
+        input_prompt += prompts.valid_tot.VALID_PREFIX
+        output_logits = self.base_model.get_next_token_logits(
+            input_prompt,
+            temperature=self.temperature,
+            num_logprobs=100,
+            candidates=["Yes", "No"]
+        )
+        reward:float = torch.softmax(torch.tensor(output_logits), dim=0)[0].item()
+
+        return reward, {"intuition": 0, "self_eval":reward}
+    
     def reward(self, state, action, **kwargs) -> tuple[float, dict]:
-        return 0, {}
+        self_eval = kwargs["self_eval"]
+        return self_eval, {"intuition": 0, "self_eval":self_eval}
+        
 llama_ckpts = os.environ.get("LLAMA_CKPTS", None)
 def main(
            model_dir: str = llama_ckpts,
@@ -199,7 +294,7 @@ def main(
            **search_algo_params):
 
     if search_algo == "beam":
-        search_algo_params |= {"max_depth": depth_limit}
+        search_algo_params |= {"max_depth": depth_limit, "add_gold": add_gold}
     elif search_algo == "dfs":
         search_algo_params |= {"depth": depth_limit}
     else:
@@ -225,7 +320,14 @@ def main(
         #     torch.distributed.barrier()
         # to make sure the plan is saved before evaluation in multi-process setting
         try:
-            answer = algo_output.terminal_state[-1].replace("The answer is ", "").replace(".", "").replace(' ', '')
+            answer_state = algo_output.terminal_state[-1]
+            match = re.match(r'.*The answer is .*?([ $.0-9,\-=]+).*\..*', answer_state[-1])
+            answer = match[1].replace(',', '').replace('$', '').replace(' ', '')
+            if '=' in answer:
+                answer = answer[answer.rindex('=') + 1:]
+            
+            
+            # .replace("The answer is ", "").replace(".", "").replace(' ', '')
             answer = answer.replace("So ", "")
             return answer
 
@@ -255,19 +357,19 @@ def main(
     elif base_lm == 'vllm':
         from reasoners.lm import VLLMModel
         base_model = VLLMModel(hf_path, hf_path, max_batch_size=batch_size, max_new_tokens=64,
-                                gpu_memory_utilization=gpu_memory_utilization)
+                                gpu_memory_utilization=gpu_memory_utilization, max_logprobs=100, repetition_penalty=1.1, length_penalty=1.0)
     else:
         from reasoners.lm import ExLlamaModel  # Maybe other transformer models also support
         base_model = ExLlamaModel(model_dir, 
                                 lora_dir=None, 
                                 device=torch.device("cuda:0"), 
                                 max_batch_size=1, 
-                                max_new_tokens=200, 
+                                max_new_tokens=64, 
                                 max_seq_length=2048,
                                 mem_map=mem_map)
 
     world_model = GSM8kToTWorldModel()
-    search_config = GSM8kToTSearchConfig(base_model=base_model, temperature=temperature, add_gold=add_gold, n_actions=search_algo_params["beam_size"])
+    search_config = GSM8kToTSearchConfig(base_model=base_model, temperature=temperature, add_gold=add_gold, n_actions=search_algo_params["beam_size"],max_new_tokens=64)
     
     output_extractor = dfs_bw_extractor if search_algo == "dfs" else bfs_pronto_extractor
     if search_algo == "dfs":
@@ -323,6 +425,9 @@ def main(
 
     accuracy = evaluator.evaluate(reasoner, shuffle_prompt=True, num_shot=4, resume=resume, log_dir=log_dir, num_sample=num_sample_per_worker if num_sample_per_worker != -1 else num_sample, pass_idx = pass_idx)
     print(accuracy)
+
+def retrieve_answer_from_dataset(answer: str) -> str:
+    return re.match(r'[\S\s]*#### (.*)$', answer)[1]
 
 if __name__ == '__main__':
     import os

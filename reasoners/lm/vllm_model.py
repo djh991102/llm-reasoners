@@ -1,6 +1,7 @@
 from typing import Union, Optional
 import warnings
 import copy
+import math
 
 from transformers import AutoTokenizer
 import torch
@@ -11,7 +12,7 @@ from vllm import LLM, SamplingParams
 from .. import LanguageModel,GenerateOutput
 
 class VLLMModel(LanguageModel):
-    def __init__(self, model_pth, tokenizer_pth, device='cuda:0', max_batch_size=1, max_new_tokens=None, gpu_memory_utilization=0.9, **kwargs):
+    def __init__(self, model_pth, tokenizer_pth, device='cuda:0', max_batch_size=1, max_new_tokens=None, gpu_memory_utilization=0.9, max_logprobs=20,**kwargs):
         super().__init__()
         """
         Initializes a new instance of the `HFModel` class.
@@ -30,6 +31,7 @@ class VLLMModel(LanguageModel):
             tokenizer=tokenizer_pth,
             trust_remote_code=True,
             gpu_memory_utilization=gpu_memory_utilization,
+            max_logprobs=max_logprobs,
         )
         self.gpu_memory_utilization = gpu_memory_utilization
         self.max_new_tokens = max_new_tokens
@@ -48,6 +50,9 @@ class VLLMModel(LanguageModel):
             output_log_probs: bool = False,
             hide_input=True,
             do_sample=True,
+            num_logprobs=5,
+            repetition_penalty=1.1,
+            length_penalty=1.0,
             **kwargs,
         ) -> GenerateOutput:
 
@@ -82,8 +87,10 @@ class VLLMModel(LanguageModel):
             stop_token_ids=eos_token_id,
             top_k=top_k,
             top_p=top_p,
-            logprobs=5 if output_log_probs else None,
+            logprobs= num_logprobs if output_log_probs else None,
             include_stop_str_in_output=True,
+            repetition_penalty=repetition_penalty,
+            length_penalty=length_penalty
         )
         if max_new_tokens is not None:
             generation_config = SamplingParams(
@@ -92,8 +99,10 @@ class VLLMModel(LanguageModel):
             stop_token_ids=eos_token_id,
             top_k=top_k,
             top_p=top_p,
-            logprobs=5 if output_log_probs else None,
+            logprobs= num_logprobs if output_log_probs else None,
             include_stop_str_in_output=True,
+            repetition_penalty=repetition_penalty,
+            length_penalty=length_penalty
         )
         
         if num_return_sequences > 1:
@@ -101,6 +110,7 @@ class VLLMModel(LanguageModel):
             inputs = inputs * num_return_sequences
         
         decoded_list = []
+        tokenize_list = []
         log_prob_list = []
         for start in range(0, len(inputs), self.max_batch_size):
             end = min(start + self.max_batch_size, len(inputs))
@@ -121,17 +131,40 @@ class VLLMModel(LanguageModel):
                 decoded_list.extend([output.outputs[0].text for output in generation_output])
             else:
                 decoded_list.extend([curr_inputs[i] + output.outputs[0].text for i, output in enumerate(generation_output)])
+            tokenize_list.extend([output.outputs[0].token_ids for output in generation_output])
         if not output_log_probs:
             log_prob_list = None
 
-        return GenerateOutput(decoded_list, log_prob_list)
+        return GenerateOutput(decoded_list, tokenize_list, log_prob_list)
 
     @torch.no_grad()
     def get_next_token_logits(
         self,
-        prompt: Union[str, list[str]],
-        candidates: Union[list[str], list[list[str]]]) -> list[np.ndarray]:
-        raise Exception("Not Implemented")
+        prompt: str,
+        candidates: list[str],
+        temperature: float = 1.0,
+        top_k: int = 10,
+        top_p: float = 0.8,
+        num_logprobs=5,
+        ) -> list[np.ndarray]:
+        generation_config = SamplingParams(
+            temperature=temperature,
+            max_tokens=1,
+            top_k=top_k,
+            top_p=top_p,
+            logprobs=num_logprobs,
+            include_stop_str_in_output=True,
+        )
+        outputs = self.model.generate([prompt], sampling_params=generation_config)
+        logprobs = outputs[0].outputs[0].logprobs[-1]
+
+        log_prob_list = []
+        for candidate_token_id in self.tokenizer.encode(candidates, add_special_tokens=False):
+            if candidate_token_id in logprobs:
+                log_prob_list.append(logprobs[candidate_token_id].logprob)
+            else:
+                log_prob_list.append(-1e64)
+        return log_prob_list
     
     @torch.no_grad()
     def get_loglikelihood(self, prefix: str, contents: list[str], **kwargs) -> np.ndarray:

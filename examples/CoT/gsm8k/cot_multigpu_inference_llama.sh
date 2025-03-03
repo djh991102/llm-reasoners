@@ -1,10 +1,10 @@
 base_lm="vllm"
-hf_path="deepseek-ai/DeepSeek-R1-Distill-Llama-8B"
-search_algo="beam"
+hf_path="meta-llama/Meta-Llama-3-8B"
 
-IFS=',' read -ra GPU_ARRAY <<< "0,1,2,3,5,6,7"
+IFS=',' read -ra GPU_ARRAY <<< "7"
 NUM_GPUS=${#GPU_ARRAY[@]}
-log_dir="/home/jaehyeok/llm-reasoners/logs/gsm8k_cot_ds_test"
+
+log_dir="/home/jaehyeok/llm-reasoners/logs/gsm8k_cot_ds_test_llama"
 
 # BFS hyperparameter
 
@@ -18,7 +18,6 @@ for i in "${!GPU_ARRAY[@]}"; do
     --hf_path ${hf_path} \
     --temperature 0.0 \
     --gpu_memory_utilization 0.9 \
-    --search_algo ${search_algo} \
     --log_dir ${log_dir} \
     --batch_size 5 &
 done

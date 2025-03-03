@@ -26,6 +26,7 @@ def create_directory_if_not_exists(directory):
 
 class GenerateOutput(NamedTuple):
     text: list[str]
+    tokens: list[int]
     log_prob: Optional[list[np.ndarray]] = None
 
 
@@ -232,16 +233,23 @@ class Evaluator():
                                             initial=resume,
                                             desc=self._dataset_name,
                                             disable=self.disable_tqdm)):
-            if pass_idx is not None and (resume + i) in pass_idx:
-                continue
             try:
-                model_prompt = self.sample_prompt(
-                    shuffle_prompt=shuffle_prompt,
-                    num_shot=num_shot,
-                )
-                algo_output = reasoner(self.input_processor(example),
-                                        prompt=model_prompt)
-                output = self.output_extractor(algo_output)
+                if pass_idx is not None and (resume + i) in pass_idx:
+                    ps = True
+                    with open(os.path.join(log_dir, 'algo_output', f'{resume + i+1}.pkl'), 'rb')  as f:
+                        algo_output = pickle.load(f)
+                    output = self.output_extractor(algo_output)
+                    print(f"Already done: {resume + i}")
+                else:
+                    ps = False
+                    model_prompt = self.sample_prompt(
+                        shuffle_prompt=shuffle_prompt,
+                        num_shot=num_shot,
+                    )
+                    print(f"Evaluating : {resume + i+1}")
+                    algo_output = reasoner(self.input_processor(example),
+                                            prompt=model_prompt)
+                    output = self.output_extractor(algo_output)
 
                 # example.test_example.answer
                 answer = self.answer_extractor(example)
@@ -250,21 +258,22 @@ class Evaluator():
                 accuracy = correct_count / (i + 1)
                 log_str = f'Case #{resume + i + 1}: {correct=}, {output=}, {answer=};'\
                             f'{accuracy=:.3f} ({correct_count}/{i + 1})'
-                
                 tqdm.write(log_str)
 
                 if (not self.disable_log) and \
                     (not torch.distributed.is_initialized() or torch.distributed.get_rank() == 0):
-                    with open(os.path.join(log_dir, 'result.log'), 'a') as f:
-                        print(log_str, file=f)
-                
-                    with open(os.path.join(log_dir, 'algo_output', f'{resume + i + 1}.pkl'), 'wb')  as f:
-                        pickle.dump(algo_output, f)
+                    if not ps:
+                        with open(os.path.join(log_dir, 'result.log'), 'a') as f:
+                            print(log_str, file=f)
+                        
+                        with open(os.path.join(log_dir, 'algo_output', f'{resume + i + 1}.pkl'), 'wb')  as f:
+                            pickle.dump(algo_output, f)
                 cnt += 1
-                if num_sample > 0 and cnt >= num_sample:
+                if num_sample > 0 and cnt > num_sample:
                     break
             except Exception as e:
                 print(f"Error raised while evaluating Case #{resume + i + 1}: {e}")
+                # quit()
         return accuracy
 
     def evaluate_sc(self,

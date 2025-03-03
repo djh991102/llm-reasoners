@@ -1,11 +1,11 @@
 base_lm="vllm"
-hf_path="deepseek-ai/DeepSeek-R1-Distill-Llama-8B"
+hf_path="meta-llama/Meta-Llama-3-8B"
 search_algo="beam"
 
-IFS=',' read -ra GPU_ARRAY <<< "0,1,2,3"
+IFS=',' read -ra GPU_ARRAY <<< "0,1,2,3,4,5,6,7"
 NUM_GPUS=${#GPU_ARRAY[@]}
 
-log_dir="logs/gsm8k_generated_OOD_BeamSearch"
+log_dir="logs/gsm8k_fast_reward_llama_base"
 
 # BFS hyperparameter
 depth_limit=10
@@ -26,7 +26,7 @@ for i in "${!GPU_ARRAY[@]}"; do
     --beam_size ${beam_size} \
     --log_dir ${log_dir} \
     --add_gold gold \
-    --batch_size ${beam_size} & 
+    --batch_size ${beam_size} &
 done
 
 # Wait for all background processes to complete

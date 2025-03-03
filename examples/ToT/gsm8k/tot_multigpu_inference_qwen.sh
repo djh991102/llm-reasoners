@@ -1,26 +1,32 @@
 base_lm="vllm"
-hf_path="deepseek-ai/DeepSeek-R1-Distill-Llama-8B"
+hf_path="Qwen/Qwen2-Math-7B"
 search_algo="beam"
 
-IFS=',' read -ra GPU_ARRAY <<< "0,1,2,3,5,6,7"
+IFS=',' read -ra GPU_ARRAY <<< "0,1,2,3"
 NUM_GPUS=${#GPU_ARRAY[@]}
-log_dir="/home/jaehyeok/llm-reasoners/logs/gsm8k_cot_ds_test"
+
+log_dir="logs/gsm8k_fast_reward_qwen"
 
 # BFS hyperparameter
+depth_limit=10
+beam_size=5
 
 # Launch process on each GPU in parallel
 for i in "${!GPU_ARRAY[@]}"; do
     # Beam Search
-    CUDA_VISIBLE_DEVICES=${GPU_ARRAY[$i]} python examples/CoT/gsm8k/inference.py \
+    CUDA_VISIBLE_DEVICES=${GPU_ARRAY[$i]} python examples/ToT/gsm8k/tot_inference.py \
     --num_workers ${NUM_GPUS} \
     --worker_idx ${i} \
     --base_lm ${base_lm} \
+    --depth_limit ${depth_limit} \
     --hf_path ${hf_path} \
-    --temperature 0.0 \
+    --temperature 0.1 \
     --gpu_memory_utilization 0.9 \
     --search_algo ${search_algo} \
+    --beam_size ${beam_size} \
     --log_dir ${log_dir} \
-    --batch_size 5 &
+    --add_gold gold \
+    --batch_size ${beam_size} &
 done
 
 # Wait for all background processes to complete
