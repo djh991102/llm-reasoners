@@ -357,7 +357,7 @@ def main(
     elif base_lm == 'vllm':
         from reasoners.lm import VLLMModel
         base_model = VLLMModel(hf_path, hf_path, max_batch_size=batch_size, max_new_tokens=64,
-                                gpu_memory_utilization=gpu_memory_utilization, max_logprobs=100, repetition_penalty=1.1, length_penalty=1.0)
+                                gpu_memory_utilization=gpu_memory_utilization, max_logprobs=100, repetition_penalty=1.1)
     else:
         from reasoners.lm import ExLlamaModel  # Maybe other transformer models also support
         base_model = ExLlamaModel(model_dir, 

@@ -52,7 +52,6 @@ class VLLMModel(LanguageModel):
             do_sample=True,
             num_logprobs=5,
             repetition_penalty=1.1,
-            length_penalty=1.0,
             **kwargs,
         ) -> GenerateOutput:
 
@@ -89,8 +88,7 @@ class VLLMModel(LanguageModel):
             top_p=top_p,
             logprobs= num_logprobs if output_log_probs else None,
             include_stop_str_in_output=True,
-            repetition_penalty=repetition_penalty,
-            length_penalty=length_penalty
+            repetition_penalty=repetition_penalty
         )
         if max_new_tokens is not None:
             generation_config = SamplingParams(
@@ -101,8 +99,7 @@ class VLLMModel(LanguageModel):
             top_p=top_p,
             logprobs= num_logprobs if output_log_probs else None,
             include_stop_str_in_output=True,
-            repetition_penalty=repetition_penalty,
-            length_penalty=length_penalty
+            repetition_penalty=repetition_penalty
         )
         
         if num_return_sequences > 1:
