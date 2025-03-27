@@ -7,7 +7,6 @@ import json
 from tqdm import tqdm
 from typing import Type, Callable, Optional, Literal
 import os
-import examples.CoT.gsm8k.utils as utils
 from dataset import GSM8kDataset, GSM8kExample
 from reasoners import Reasoner
 import torch
